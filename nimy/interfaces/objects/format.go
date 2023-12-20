@@ -1,7 +1,7 @@
 package objects
 
 type Format interface {
-	AddItem(col string, mapItem FormatItem) bool
+	AddItem(key string, mapItem FormatItem) bool
 	GetMap() map[string]FormatItem
 }
 
@@ -10,7 +10,7 @@ type format struct {
 }
 
 type FormatItem struct {
-	ColType string `json:"colType"`
+	KeyType string `json:"keyType"`
 }
 
 func CreateFormat(formatMap map[string]FormatItem) Format {
@@ -22,11 +22,11 @@ func CreateFormat(formatMap map[string]FormatItem) Format {
 	}
 }
 
-func (f format) AddItem(col string, formatItem FormatItem) bool {
-	if _, ok := f.formatMap[col]; ok {
+func (f format) AddItem(key string, formatItem FormatItem) bool {
+	if _, ok := f.formatMap[key]; ok {
 		return false
 	}
-	f.formatMap[col] = formatItem
+	f.formatMap[key] = formatItem
 	return true
 }
 

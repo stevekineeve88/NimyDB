@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"nimy/interfaces/disk"
 	"nimy/interfaces/objects"
+	"nimy/interfaces/rules"
 	"os"
 	"strings"
 )
@@ -51,8 +52,17 @@ func main() {
 				}
 				colType := getInput("Enter a Column Type: ")
 				format.AddItem(column, objects.FormatItem{
-					ColType: colType,
+					KeyType: colType,
 				})
+			}
+			blobRules := rules.CreateBlobRules(blob, format)
+			if err := blobRules.CheckBlob(); err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
+			if err := blobRules.CheckFormat(); err != nil {
+				fmt.Println(err.Error())
+				continue
 			}
 			if err := blobDisk.Create(currentDb, blob, format); err != nil {
 				fmt.Println(err.Error())
