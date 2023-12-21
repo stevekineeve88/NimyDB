@@ -7,11 +7,14 @@ import (
 	"nimy/interfaces/objects"
 	"regexp"
 	"slices"
+	"strconv"
+	"time"
 )
 
 type BlobRules interface {
 	CheckBlob() error
-	CheckFormat() error
+	CheckFormatStructure() error
+	FormatRecord(record map[string]any) error
 }
 
 type blobRules struct {
@@ -37,14 +40,36 @@ func (br blobRules) CheckBlob() error {
 	return nil
 }
 
-func (br blobRules) CheckFormat() error {
+func (br blobRules) CheckFormatStructure() error {
 	for key, formatItem := range br.format.GetMap() {
-		if err := br.checkKey(key); err != nil {
-			return err
+		if len(key) > constants.KeyMaxLength {
+			return errors.New(fmt.Sprintf("key length on %s exceeds %d", key, constants.KeyMaxLength))
+		}
+		match, _ := regexp.MatchString(constants.KeyRegex, key)
+		if !match {
+			return errors.New(fmt.Sprintf("key %s does not match %s", key, constants.KeyRegexDesc))
 		}
 		if err := br.checkFormatItem(key, formatItem); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (br blobRules) FormatRecord(record map[string]any) error {
+	if len(br.format.GetMap()) != len(record) {
+		return errors.New("record does not match format length")
+	}
+	for key, value := range record {
+		formatItem, ok := br.format.GetMap()[key]
+		if !ok {
+			return errors.New(fmt.Sprintf("key %s does not exist in %s", key, br.blob))
+		}
+		newValue, err := br.convertRecordValue(value.(string), formatItem)
+		if err != nil {
+			return errors.New(fmt.Sprintf("error on key %s: %s", key, err.Error()))
+		}
+		record[key] = newValue
 	}
 	return nil
 }
@@ -56,13 +81,27 @@ func (br blobRules) checkFormatItem(key string, formatItem objects.FormatItem) e
 	return nil
 }
 
-func (br blobRules) checkKey(key string) error {
-	if len(key) > constants.KeyMaxLength {
-		return errors.New(fmt.Sprintf("key length on %s exceeds %d", key, constants.KeyMaxLength))
+func (br blobRules) convertRecordValue(value string, formatItem objects.FormatItem) (any, error) {
+	switch formatItem.KeyType {
+	case constants.String:
+		return value, nil
+	case constants.Int:
+		intConv, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, err
+		}
+		return intConv, nil
+	case constants.Bool:
+		if !slices.Contains(constants.GetAcceptedBoolValues(), value) {
+			return nil, errors.New(fmt.Sprintf("%s is not an accepted boolean value", value))
+		}
+		return value == constants.BoolValTrue, nil
+	case constants.DateTime:
+		intConv, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		return time.Unix(intConv, 0), nil
 	}
-	match, _ := regexp.MatchString(constants.KeyRegex, key)
-	if !match {
-		return errors.New(fmt.Sprintf("key %s does not match %s", key, constants.KeyRegexDesc))
-	}
-	return nil
+	return nil, errors.New("type not handled")
 }

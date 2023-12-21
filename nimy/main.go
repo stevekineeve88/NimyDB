@@ -6,6 +6,7 @@ import (
 	"nimy/interfaces/disk"
 	"nimy/interfaces/objects"
 	"nimy/interfaces/rules"
+	"nimy/interfaces/store"
 	"os"
 	"strings"
 )
@@ -14,6 +15,7 @@ func main() {
 	dataLocation := "../data"
 	dbDisk := disk.CreateDBDiskManager(dataLocation)
 	blobDisk := disk.CreateBlobDiskManager(dataLocation)
+	blobStore := store.CreateBlobStore(blobDisk)
 	fmt.Println("---WELCOME TO NimyDB-----")
 	var currentDb string
 
@@ -60,7 +62,7 @@ func main() {
 				fmt.Println(err.Error())
 				continue
 			}
-			if err := blobRules.CheckFormat(); err != nil {
+			if err := blobRules.CheckFormatStructure(); err != nil {
 				fmt.Println(err.Error())
 				continue
 			}
@@ -75,6 +77,52 @@ func main() {
 			blob := getInput("Enter Blob Name: ")
 			if err := blobDisk.Delete(currentDb, blob); err != nil {
 				fmt.Println(err.Error())
+			}
+		case "ADD RECORD":
+			if currentDb == "" {
+				fmt.Println("Not using a database")
+				continue
+			}
+			blob := getInput("Enter Blob Name: ")
+			format, err := blobDisk.GetFormat(currentDb, blob)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
+			record := make(map[string]any)
+			for key, _ := range format.GetMap() {
+				record[key] = getInput(fmt.Sprintf("Enter value for %s: ", key))
+			}
+			recordId, err := blobStore.AddRecord(currentDb, blob, record)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
+			fmt.Printf("record added with ID %s\n", recordId)
+		case "GET RECORD":
+			if currentDb == "" {
+				fmt.Println("Not using a database")
+				continue
+			}
+			blob := getInput("Enter Blob Name: ")
+			recordId := getInput("Enter Record ID: ")
+			record, err := blobStore.GetRecord(currentDb, blob, recordId)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
+			fmt.Println(record)
+		case "DELETE RECORD":
+			if currentDb == "" {
+				fmt.Println("Not using a database")
+				continue
+			}
+			blob := getInput("Enter Blob Name: ")
+			recordId := getInput("Enter Record ID: ")
+			err := blobStore.DeleteRecord(currentDb, blob, recordId)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
 			}
 		case "DONE":
 			break

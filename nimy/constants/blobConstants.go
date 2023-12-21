@@ -1,11 +1,11 @@
 package constants
 
 const (
-	String       = "string"
-	Int32        = "int32"
-	Int64        = "int64"
-	Bool         = "bool"
-	DateTime     = "datetime"
+	String   = "string"
+	Int      = "int"
+	Bool     = "bool"
+	DateTime = "datetime"
+
 	KeyMaxLength = 45
 	KeyRegex     = "^[a-z_]*$"
 	KeyRegexDesc = "snake case"
@@ -13,14 +13,23 @@ const (
 	BlobMaxLength = 25
 	BlobRegex     = "^[a-z_]*$"
 	BlobRegexDesc = "snake case"
+
+	BoolValTrue  = "1"
+	BoolValFalse = "0"
 )
 
 func GetFormatTypes() []string {
 	return []string{
 		String,
-		Int32,
-		Int64,
+		Int,
 		Bool,
 		DateTime,
+	}
+}
+
+func GetAcceptedBoolValues() []string {
+	return []string{
+		BoolValTrue,
+		BoolValFalse,
 	}
 }

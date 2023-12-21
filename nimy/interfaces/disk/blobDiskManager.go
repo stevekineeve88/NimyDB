@@ -15,6 +15,9 @@ type BlobDiskManager interface {
 	Exists(db string, blob string) bool
 	CreatePage(db string, blob string) (objects.PageItem, error)
 	GetPages(db string, blob string) ([]objects.PageItem, error)
+	GetPage(db string, blob string, page objects.PageItem) (map[string]map[string]any, error)
+	GetFormat(db string, blob string) (objects.Format, error)
+	WritePage(db string, blob string, page objects.PageItem, records map[string]map[string]any) error
 }
 
 type blobDisk struct {
@@ -79,6 +82,19 @@ func (bd blobDisk) CreatePage(db string, blob string) (objects.PageItem, error) 
 	return newPageItem, nil
 }
 
+func (bd blobDisk) GetFormat(db string, blob string) (objects.Format, error) {
+	var formatItems map[string]objects.FormatItem
+	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/format.json", bd.dataLocation, db, blob))
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(file, &formatItems)
+	if err != nil {
+		return nil, err
+	}
+	return objects.CreateFormat(formatItems), nil
+}
+
 func (bd blobDisk) GetPages(db string, blob string) ([]objects.PageItem, error) {
 	var pagesItems []objects.PageItem
 	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/pages.json", bd.dataLocation, db, blob))
@@ -87,6 +103,22 @@ func (bd blobDisk) GetPages(db string, blob string) ([]objects.PageItem, error) 
 	}
 	unmarshalError := json.Unmarshal(file, &pagesItems)
 	return pagesItems, unmarshalError
+}
+
+func (bd blobDisk) GetPage(db string, blob string, page objects.PageItem) (map[string]map[string]any, error) {
+	var pageData map[string]map[string]any
+	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", bd.dataLocation, db, blob, page.FileName))
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(file, &pageData)
+	return pageData, err
+}
+
+func (bd blobDisk) WritePage(db string, blob string, page objects.PageItem, records map[string]map[string]any) error {
+	directoryName := fmt.Sprintf("%s/%s/%s", bd.dataLocation, db, blob)
+	recordData, _ := json.MarshalIndent(records, "", " ")
+	return bd.writeFile(directoryName, recordData, page.FileName)
 }
 
 func (bd blobDisk) createPage(directoryName string, pageItem objects.PageItem) error {
