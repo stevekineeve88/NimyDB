@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"nimy/constants"
 	"nimy/interfaces/objects"
 	"os"
 )
@@ -16,6 +17,7 @@ type BlobDiskManager interface {
 	CreatePage(db string, blob string) (objects.PageItem, error)
 	GetPages(db string, blob string) ([]objects.PageItem, error)
 	GetPage(db string, blob string, page objects.PageItem) (map[string]map[string]any, error)
+	GetPageInfo(db string, blob string, page objects.PageItem) (os.FileInfo, error)
 	GetFormat(db string, blob string) (objects.Format, error)
 	WritePage(db string, blob string, page objects.PageItem, records map[string]map[string]any) error
 }
@@ -84,7 +86,7 @@ func (bd blobDisk) CreatePage(db string, blob string) (objects.PageItem, error) 
 
 func (bd blobDisk) GetFormat(db string, blob string) (objects.Format, error) {
 	var formatItems map[string]objects.FormatItem
-	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/format.json", bd.dataLocation, db, blob))
+	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", bd.dataLocation, db, blob, constants.FormatFile))
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +99,7 @@ func (bd blobDisk) GetFormat(db string, blob string) (objects.Format, error) {
 
 func (bd blobDisk) GetPages(db string, blob string) ([]objects.PageItem, error) {
 	var pagesItems []objects.PageItem
-	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/pages.json", bd.dataLocation, db, blob))
+	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", bd.dataLocation, db, blob, constants.PagesFile))
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +115,10 @@ func (bd blobDisk) GetPage(db string, blob string, page objects.PageItem) (map[s
 	}
 	err = json.Unmarshal(file, &pageData)
 	return pageData, err
+}
+
+func (bd blobDisk) GetPageInfo(db string, blob string, page objects.PageItem) (os.FileInfo, error) {
+	return os.Stat(fmt.Sprintf("%s/%s/%s/%s", bd.dataLocation, db, blob, page.FileName))
 }
 
 func (bd blobDisk) WritePage(db string, blob string, page objects.PageItem, records map[string]map[string]any) error {
@@ -132,17 +138,17 @@ func (bd blobDisk) deletePage(directoryName string, pageItem objects.PageItem) e
 
 func (bd blobDisk) writePagesFile(directoryName string, pageItems []objects.PageItem) error {
 	pagesData, _ := json.MarshalIndent(pageItems, "", " ")
-	return bd.writeFile(directoryName, pagesData, "pages.json")
+	return bd.writeFile(directoryName, pagesData, constants.PagesFile)
 }
 
 func (bd blobDisk) createFormatFile(directoryName string, format objects.Format) error {
 	formatData, _ := json.MarshalIndent(format.GetMap(), "", " ")
-	return bd.createFile(directoryName, formatData, "format.json")
+	return bd.createFile(directoryName, formatData, constants.FormatFile)
 }
 
 func (bd blobDisk) createPagesFile(directoryName string) error {
 	pageData, _ := json.MarshalIndent(make([]objects.PageItem, 0), "", " ")
-	return bd.createFile(directoryName, pageData, "pages.json")
+	return bd.createFile(directoryName, pageData, constants.PagesFile)
 }
 
 func (bd blobDisk) createFile(directory string, fileData []byte, fileName string) error {

@@ -3,12 +3,15 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"nimy/interfaces/disk"
 	"nimy/interfaces/objects"
 	"nimy/interfaces/rules"
 	"nimy/interfaces/store"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -124,6 +127,8 @@ func main() {
 				fmt.Println(err.Error())
 				continue
 			}
+		case "SIMULATE MASS ADD":
+			simulateAddUsers(blobStore)
 		case "DONE":
 			break
 		default:
@@ -132,6 +137,46 @@ func main() {
 		if input == "DONE" {
 			break
 		}
+	}
+}
+
+func simulateAddUsers(bs store.BlobStore) {
+	firstNames := []string{
+		"John",
+		"Jacob",
+		"Jingle",
+	}
+	lastNames := []string{
+		"Johnson",
+		"Jameson",
+		"Jingle",
+	}
+	count := 1
+	size := 30000
+	initialRecord := make(map[string]any)
+	initialRecord["full_name"] = fmt.Sprintf("%s %s", firstNames[rand.Intn(3)], lastNames[rand.Intn(3)])
+	initialRecord["is_deleted"] = strconv.Itoa(rand.Intn(2))
+	initialRecord["created"] = strconv.FormatInt(time.Now().Unix(), 10)
+	insertRecords := []map[string]any{
+		initialRecord,
+	}
+	for true {
+		record := make(map[string]any)
+		record["full_name"] = fmt.Sprintf("%s %s", firstNames[rand.Intn(3)], lastNames[rand.Intn(3)])
+		record["is_deleted"] = strconv.Itoa(rand.Intn(2))
+		record["created"] = strconv.FormatInt(time.Now().Unix(), 10)
+		insertRecords = append(insertRecords, record)
+		count++
+		if count == size {
+			break
+		}
+	}
+	fmt.Println(len(insertRecords))
+	err := bs.AddRecordsBulk("app", "users", insertRecords)
+	if err != nil {
+		fmt.Println(err.Error())
+	} else {
+		fmt.Println("FINISHED INSERTING!!")
 	}
 }
 

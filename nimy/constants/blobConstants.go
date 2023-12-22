@@ -16,6 +16,11 @@ const (
 
 	BoolValTrue  = "1"
 	BoolValFalse = "0"
+
+	MaxPageSize = 1024 * 10
+
+	PagesFile  = "pages.json"
+	FormatFile = "format.json"
 )
 
 func GetFormatTypes() []string {
