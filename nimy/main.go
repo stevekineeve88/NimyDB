@@ -109,11 +109,28 @@ func main() {
 			}
 			blob := getInput("Enter Blob Name: ")
 			recordId := getInput("Enter Record ID: ")
+			start := time.Now()
 			record, err := blobStore.GetRecord(currentDb, blob, recordId)
 			if err != nil {
 				fmt.Println(err.Error())
 				continue
 			}
+			fmt.Println(time.Now().Sub(start).Seconds())
+			fmt.Println(record)
+		case "GET RECORD OLD":
+			if currentDb == "" {
+				fmt.Println("Not using a database")
+				continue
+			}
+			blob := getInput("Enter Blob Name: ")
+			recordId := getInput("Enter Record ID: ")
+			start := time.Now()
+			record, err := blobStore.GetRecordOld(currentDb, blob, recordId)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
+			fmt.Println(time.Now().Sub(start).Seconds())
 			fmt.Println(record)
 		case "DELETE RECORD":
 			if currentDb == "" {
@@ -152,7 +169,7 @@ func simulateAddUsers(bs store.BlobStore) {
 		"Jingle",
 	}
 	count := 1
-	size := 30000
+	size := 10000000
 	initialRecord := make(map[string]any)
 	initialRecord["full_name"] = fmt.Sprintf("%s %s", firstNames[rand.Intn(3)], lastNames[rand.Intn(3)])
 	initialRecord["is_deleted"] = strconv.Itoa(rand.Intn(2))
@@ -172,7 +189,7 @@ func simulateAddUsers(bs store.BlobStore) {
 		}
 	}
 	fmt.Println(len(insertRecords))
-	err := bs.AddRecordsBulk("app", "users", insertRecords)
+	_, err := bs.AddRecordsBulk("app", "users", insertRecords)
 	if err != nil {
 		fmt.Println(err.Error())
 	} else {
