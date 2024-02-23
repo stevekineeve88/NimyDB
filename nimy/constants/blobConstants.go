@@ -18,7 +18,7 @@ const (
 	BoolValFalse = "0"
 
 	MaxPageSize  = 1024 * 10
-	MaxIndexSize = 1024 * 100
+	MaxIndexSize = 5024 * 100
 
 	PagesFile   = "pages.json"
 	FormatFile  = "format.json"

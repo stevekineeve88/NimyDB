@@ -125,7 +125,7 @@ func main() {
 			blob := getInput("Enter Blob Name: ")
 			recordId := getInput("Enter Record ID: ")
 			start := time.Now()
-			record, err := blobStore.GetRecordOld(currentDb, blob, recordId)
+			record, err := blobStore.GetRecordFullScan(currentDb, blob, recordId)
 			if err != nil {
 				fmt.Println(err.Error())
 				continue
@@ -169,7 +169,7 @@ func simulateAddUsers(bs store.BlobStore) {
 		"Jingle",
 	}
 	count := 1
-	size := 10000000
+	size := 100000
 	initialRecord := make(map[string]any)
 	initialRecord["full_name"] = fmt.Sprintf("%s %s", firstNames[rand.Intn(3)], lastNames[rand.Intn(3)])
 	initialRecord["is_deleted"] = strconv.Itoa(rand.Intn(2))

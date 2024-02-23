@@ -15,15 +15,15 @@ type BlobDiskManager interface {
 	Delete(db string, blob string) error
 	Exists(db string, blob string) bool
 	CreatePage(db string, blob string) (objects.PageItem, error)
-	CreateIndexPage(db string, blob string) (objects.IndexItem, error)
+	CreateIndexPage(db string, blob string, prefix string) (objects.IndexItem, error)
 	GetPages(db string, blob string) ([]objects.PageItem, error)
-	GetIndexPages(db string, blob string) ([]objects.IndexItem, error)
+	GetIndexPages(db string, blob string) (map[string]objects.IndexItem, error)
 	GetPage(db string, blob string, page objects.PageItem) (map[string]map[string]any, error)
-	GetIndexPage(db string, blob string, index objects.IndexItem) (map[string]string, error)
+	GetIndexPage(db string, blob string, fileName string) (map[string]string, error)
 	GetPageInfo(db string, blob string, page objects.PageItem) (os.FileInfo, error)
 	GetFormat(db string, blob string) (objects.Format, error)
 	WritePage(db string, blob string, page objects.PageItem, records map[string]map[string]any) error
-	WriteIndexPage(db string, blob string, indexPage objects.IndexItem, records map[string]string) error
+	WriteIndexPage(db string, blob string, fileName string, records map[string]string) error
 }
 
 type blobDisk struct {
@@ -46,8 +46,7 @@ func (bd blobDisk) Create(db string, blob string, format objects.Format) error {
 	pageError := bd.createPagesFile(directoryName)
 	_, pageFileError := bd.CreatePage(db, blob)
 	indexError := bd.createIndexesFile(directoryName)
-	_, indexPageFileError := bd.CreateIndexPage(db, blob)
-	if formatError != nil || pageError != nil || pageFileError != nil || indexError != nil || indexPageFileError != nil {
+	if formatError != nil || pageError != nil || pageFileError != nil || indexError != nil {
 		err = bd.Delete(db, blob)
 		if err != nil {
 			panic(err.Error())
@@ -90,28 +89,34 @@ func (bd blobDisk) CreatePage(db string, blob string) (objects.PageItem, error) 
 	return newPageItem, nil
 }
 
-func (bd blobDisk) CreateIndexPage(db string, blob string) (objects.IndexItem, error) {
+func (bd blobDisk) CreateIndexPage(db string, blob string, prefix string) (objects.IndexItem, error) {
 	blankIndexPageItem := objects.IndexItem{}
-	indexPageItems, err := bd.GetIndexPages(db, blob)
+	indexItems, err := bd.GetIndexPages(db, blob)
 	if err != nil {
 		return blankIndexPageItem, nil
 	}
 	blobDirectory := fmt.Sprintf("%s/%s/%s", bd.dataLocation, db, blob)
-	newIndexPageItem := objects.IndexItem{FileName: fmt.Sprintf("index-%s.json", uuid.New().String())}
-	err = bd.createIndexPage(blobDirectory, newIndexPageItem)
-	if err != nil {
-		return blankIndexPageItem, err
+	_, ok := indexItems[prefix]
+	if !ok {
+		indexItems[prefix] = objects.IndexItem{FileNames: []string{}}
 	}
-	indexPageItems = append(indexPageItems, newIndexPageItem)
-	err = bd.writeIndexPagesFile(blobDirectory, indexPageItems)
+	fileName := fmt.Sprintf("index-%s.json", uuid.New().String())
+	err = bd.createIndexPage(blobDirectory, fileName)
 	if err != nil {
-		err = bd.deleteIndexPage(blobDirectory, newIndexPageItem)
+		return blankIndexPageItem, nil
+	}
+	indexItem, _ := indexItems[prefix]
+	indexItem.FileNames = append(indexItem.FileNames, fileName)
+	indexItems[prefix] = indexItem
+	err = bd.writeIndexPagesFile(blobDirectory, indexItems)
+	if err != nil {
+		err = bd.deleteIndexPage(blobDirectory, fileName)
 		if err != nil {
 			panic(err.Error())
 		}
 		return blankIndexPageItem, errors.New("failed to create index file")
 	}
-	return newIndexPageItem, nil
+	return indexItem, nil
 }
 
 func (bd blobDisk) GetFormat(db string, blob string) (objects.Format, error) {
@@ -137,8 +142,8 @@ func (bd blobDisk) GetPages(db string, blob string) ([]objects.PageItem, error) 
 	return pagesItems, unmarshalError
 }
 
-func (bd blobDisk) GetIndexPages(db string, blob string) ([]objects.IndexItem, error) {
-	var indexPageItems []objects.IndexItem
+func (bd blobDisk) GetIndexPages(db string, blob string) (map[string]objects.IndexItem, error) {
+	var indexPageItems map[string]objects.IndexItem
 	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", bd.dataLocation, db, blob, constants.IndexesFile))
 	if err != nil {
 		return nil, err
@@ -157,9 +162,9 @@ func (bd blobDisk) GetPage(db string, blob string, page objects.PageItem) (map[s
 	return pageData, err
 }
 
-func (bd blobDisk) GetIndexPage(db string, blob string, index objects.IndexItem) (map[string]string, error) {
+func (bd blobDisk) GetIndexPage(db string, blob string, fileName string) (map[string]string, error) {
 	var indexPageData map[string]string
-	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", bd.dataLocation, db, blob, index.FileName))
+	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", bd.dataLocation, db, blob, fileName))
 	if err != nil {
 		return nil, err
 	}
@@ -177,10 +182,10 @@ func (bd blobDisk) WritePage(db string, blob string, page objects.PageItem, reco
 	return bd.writeFile(directoryName, recordData, page.FileName)
 }
 
-func (bd blobDisk) WriteIndexPage(db string, blob string, indexPage objects.IndexItem, records map[string]string) error {
+func (bd blobDisk) WriteIndexPage(db string, blob string, fileName string, records map[string]string) error {
 	directoryName := fmt.Sprintf("%s/%s/%s", bd.dataLocation, db, blob)
 	recordData, _ := json.MarshalIndent(records, "", " ")
-	return bd.writeFile(directoryName, recordData, indexPage.FileName)
+	return bd.writeFile(directoryName, recordData, fileName)
 }
 
 func (bd blobDisk) createPage(directoryName string, pageItem objects.PageItem) error {
@@ -188,17 +193,17 @@ func (bd blobDisk) createPage(directoryName string, pageItem objects.PageItem) e
 	return bd.createFile(directoryName, pageData, pageItem.FileName)
 }
 
-func (bd blobDisk) createIndexPage(directoryName string, indexItem objects.IndexItem) error {
+func (bd blobDisk) createIndexPage(directoryName string, fileName string) error {
 	indexData, _ := json.MarshalIndent(make(map[string]string), "", " ")
-	return bd.createFile(directoryName, indexData, indexItem.FileName)
+	return bd.createFile(directoryName, indexData, fileName)
 }
 
 func (bd blobDisk) deletePage(directoryName string, pageItem objects.PageItem) error {
 	return os.Remove(fmt.Sprintf("%s/%s", directoryName, pageItem.FileName))
 }
 
-func (bd blobDisk) deleteIndexPage(directoryName string, indexItem objects.IndexItem) error {
-	return os.Remove(fmt.Sprintf("%s/%s", directoryName, indexItem.FileName))
+func (bd blobDisk) deleteIndexPage(directoryName string, fileName string) error {
+	return os.Remove(fmt.Sprintf("%s/%s", directoryName, fileName))
 }
 
 func (bd blobDisk) writePagesFile(directoryName string, pageItems []objects.PageItem) error {
@@ -206,7 +211,7 @@ func (bd blobDisk) writePagesFile(directoryName string, pageItems []objects.Page
 	return bd.writeFile(directoryName, pagesData, constants.PagesFile)
 }
 
-func (bd blobDisk) writeIndexPagesFile(directoryName string, indexItems []objects.IndexItem) error {
+func (bd blobDisk) writeIndexPagesFile(directoryName string, indexItems map[string]objects.IndexItem) error {
 	indexData, _ := json.MarshalIndent(indexItems, "", " ")
 	return bd.writeFile(directoryName, indexData, constants.IndexesFile)
 }
@@ -222,7 +227,7 @@ func (bd blobDisk) createPagesFile(directoryName string) error {
 }
 
 func (bd blobDisk) createIndexesFile(directoryName string) error {
-	indexData, _ := json.MarshalIndent(make([]objects.IndexItem, 0), "", " ")
+	indexData, _ := json.MarshalIndent(make(map[string]objects.IndexItem), "", " ")
 	return bd.createFile(directoryName, indexData, constants.IndexesFile)
 }
 
