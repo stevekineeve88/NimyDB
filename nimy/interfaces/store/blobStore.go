@@ -80,32 +80,31 @@ func (bs blobStore) AddRecordsBulk(db string, blob string, insertRecords []map[s
 			return "", err
 		}
 	}
-	for recordId, pageFile := range indexes {
-		err = bs.addIndex(db, blob, recordId, pageFile)
-		if err != nil {
-			return "", err
-		}
-	}
-	return lastRecordId, nil
+	err = bs.addIndexes(db, blob, indexes)
+	return lastRecordId, err
 }
 
 func (bs blobStore) GetRecord(db string, blob string, recordId string) (map[string]any, error) {
+	diskReads := 0
 	indexRootMap, err := bs.blobDiskManager.GetIndexPages(db, blob)
+	diskReads++
 	if err != nil {
 		return bs.GetRecordFullScan(db, blob, recordId)
 	}
-	indexItems, ok := indexRootMap[recordId[0:1]]
+	indexItems, ok := indexRootMap[recordId[0:constants.IndexPrefixLength]]
 	if !ok {
 		return bs.GetRecordFullScan(db, blob, recordId)
 	}
 	for _, fileName := range indexItems.FileNames {
 		indexMap, err := bs.blobDiskManager.GetIndexPage(db, blob, fileName)
+		diskReads++
 		if err != nil {
 			return bs.GetRecordFullScan(db, blob, recordId)
 		}
 		pageFileName, ok := indexMap[recordId]
 		if ok {
 			recordMap, err := bs.blobDiskManager.GetPage(db, blob, objects.PageItem{FileName: pageFileName})
+			diskReads++
 			if err != nil {
 				return bs.GetRecordFullScan(db, blob, recordId)
 			}
@@ -113,6 +112,7 @@ func (bs blobStore) GetRecord(db string, blob string, recordId string) (map[stri
 			if !ok {
 				return bs.GetRecordFullScan(db, blob, recordId)
 			}
+			fmt.Printf("Disk reads: %d\n", diskReads)
 			return record, nil
 		}
 	}
@@ -120,17 +120,22 @@ func (bs blobStore) GetRecord(db string, blob string, recordId string) (map[stri
 }
 
 func (bs blobStore) GetRecordFullScan(db string, blob string, recordId string) (map[string]any, error) {
+	diskReads := 0
+	fmt.Println("FULL SCAN CALLED")
 	pageItems, err := bs.blobDiskManager.GetPages(db, blob)
+	diskReads++
 	if err != nil {
 		return nil, err
 	}
 	for _, pageItem := range pageItems {
 		recordMap, err := bs.blobDiskManager.GetPage(db, blob, pageItem)
+		diskReads++
 		if err != nil {
 			return nil, err
 		}
 		record, ok := recordMap[recordId]
 		if ok {
+			fmt.Printf("Disk reads: %d\n", diskReads)
 			return record, nil
 		}
 	}
@@ -156,7 +161,7 @@ func (bs blobStore) DeleteRecord(db string, blob string, recordId string) error 
 	return errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
 }
 
-/*func (bs blobStore) addIndexes(db string, blob string, indexMap map[string]string) error {
+func (bs blobStore) addIndexes(db string, blob string, indexMap map[string]string) error {
 	indexPage, err := bs.blobDiskManager.GetIndexPages(db, blob)
 	if err != nil {
 		return err
@@ -168,53 +173,42 @@ func (bs blobStore) DeleteRecord(db string, blob string, recordId string) error 
 	}
 
 	for recordId, pageFile := range indexMap {
-		prefixIndexes, ok := prefixIndexMap[recordId[0:1]]
+		prefix := recordId[0:constants.IndexPrefixLength]
+		_, ok := prefixIndexMap[prefix]
 		if !ok {
-			prefixFile, ok := prefixFileMap[recordId[0:1]]
+			_, ok := prefixFileMap[prefix]
 			if !ok {
-				indexItem, err := bs.blobDiskManager.CreateIndexPage(db, blob, recordId[0:1])
+				indexItem, err := bs.blobDiskManager.CreateIndexPage(db, blob, prefix)
 				if err != nil {
 					return err
 				}
-				prefixFileMap[recordId[0:1]] = indexItem.FileNames[len(indexItem.FileNames)-1]
+				prefixFileMap[prefix] = indexItem.FileNames[len(indexItem.FileNames)-1]
 			}
-			indexes, err := bs.blobDiskManager.GetIndexPage(db, blob, prefixFile)
+			indexes, err := bs.blobDiskManager.GetIndexPage(db, blob, prefixFileMap[prefix])
 			if err != nil {
 				return err
 			}
-			prefixIndexMap[recordId[0:1]] = indexes
-			prefixIndexes = indexes
+			prefixIndexMap[prefix] = indexes
 		}
-
+		prefixIndexMap[prefix][recordId] = pageFile
+		if len(prefixIndexMap[prefix]) > constants.MaxIndexSize {
+			err = bs.blobDiskManager.WriteIndexPage(db, blob, prefixFileMap[prefix], prefixIndexMap[prefix])
+			if err != nil {
+				return err
+			}
+			indexItem, err := bs.blobDiskManager.CreateIndexPage(db, blob, prefix)
+			if err != nil {
+				return err
+			}
+			prefixFileMap[prefix] = indexItem.FileNames[len(indexItem.FileNames)-1]
+			delete(prefixIndexMap, prefix)
+		}
 	}
-}*/
-
-func (bs blobStore) addIndex(db string, blob string, recordId string, pageFile string) error {
-	indexPage, err := bs.blobDiskManager.GetIndexPages(db, blob)
-	if err != nil {
-		return err
-	}
-	prefix := recordId[0:1]
-	indexFiles, ok := indexPage[prefix]
-	if !ok {
-		indexFiles, err = bs.blobDiskManager.CreateIndexPage(db, blob, prefix)
+	for prefix, indexData := range prefixIndexMap {
+		err = bs.blobDiskManager.WriteIndexPage(db, blob, prefixFileMap[prefix], indexData)
 		if err != nil {
 			return err
 		}
-	}
-	indexFileName := indexFiles.FileNames[len(indexFiles.FileNames)-1]
-	indexes, err := bs.blobDiskManager.GetIndexPage(db, blob, indexFileName)
-	if err != nil {
-		return err
-	}
-	indexes[recordId] = pageFile
-	err = bs.blobDiskManager.WriteIndexPage(db, blob, indexFileName, indexes)
-	if err != nil {
-		return err
-	}
-	if len(indexes) > constants.MaxIndexSize {
-		_, err = bs.blobDiskManager.CreateIndexPage(db, blob, prefix)
-		return err
 	}
 	return nil
 }

@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	dataLocation := "../data"
+	dataLocation := "C:\\nimy-data"
 	dbDisk := disk.CreateDBDiskManager(dataLocation)
 	blobDisk := disk.CreateBlobDiskManager(dataLocation)
 	blobStore := store.CreateBlobStore(blobDisk)
@@ -145,7 +145,8 @@ func main() {
 				continue
 			}
 		case "SIMULATE MASS ADD":
-			simulateAddUsers(blobStore)
+			size, _ := strconv.Atoi(getInput("Size of set: "))
+			simulateAddUsers(size, blobStore)
 		case "DONE":
 			break
 		default:
@@ -157,7 +158,7 @@ func main() {
 	}
 }
 
-func simulateAddUsers(bs store.BlobStore) {
+func simulateAddUsers(size int, bs store.BlobStore) {
 	firstNames := []string{
 		"John",
 		"Jacob",
@@ -169,7 +170,6 @@ func simulateAddUsers(bs store.BlobStore) {
 		"Jingle",
 	}
 	count := 1
-	size := 100000
 	initialRecord := make(map[string]any)
 	initialRecord["full_name"] = fmt.Sprintf("%s %s", firstNames[rand.Intn(3)], lastNames[rand.Intn(3)])
 	initialRecord["is_deleted"] = strconv.Itoa(rand.Intn(2))
