@@ -24,6 +24,8 @@ type BlobDiskManager interface {
 	GetFormat(db string, blob string) (objects.Format, error)
 	WritePage(db string, blob string, page objects.PageItem, records map[string]map[string]any) error
 	WriteIndexPage(db string, blob string, fileName string, records map[string]string) error
+	DeletePage(db string, blob string, dPage objects.PageItem) error
+	DeleteIndexPage(db string, blob string, fileName string) error
 }
 
 type blobDisk struct {
@@ -186,6 +188,73 @@ func (bd blobDisk) WriteIndexPage(db string, blob string, fileName string, recor
 	directoryName := fmt.Sprintf("%s/%s/%s", bd.dataLocation, db, blob)
 	recordData, _ := json.MarshalIndent(records, "", " ")
 	return bd.writeFile(directoryName, recordData, fileName)
+}
+
+func (bd blobDisk) DeletePage(db string, blob string, dPage objects.PageItem) error {
+	pages, err := bd.GetPages(db, blob)
+	if err != nil {
+		return err
+	}
+	for index, page := range pages {
+		if page.FileName == dPage.FileName {
+			if len(pages) > 1 {
+				copy(pages[index:], pages[index+1:])
+				pages[len(pages)-1] = objects.PageItem{}
+				pages = pages[:len(pages)-1]
+
+				directoryName := fmt.Sprintf("%s/%s/%s", bd.dataLocation, db, blob)
+				err = bd.writePagesFile(directoryName, pages)
+				if err != nil {
+					return err
+				}
+				err = bd.deletePage(directoryName, dPage)
+				if err != nil {
+					pages = append(pages, dPage)
+					err = bd.writePagesFile(directoryName, pages)
+					if err != nil {
+						panic(err)
+					}
+				}
+			}
+			return nil
+		}
+	}
+	return errors.New(fmt.Sprintf("could not find page %s", dPage.FileName))
+}
+
+func (bd blobDisk) DeleteIndexPage(db string, blob string, fileName string) error {
+	prefixes, err := bd.GetIndexPages(db, blob)
+	if err != nil {
+		return err
+	}
+	for prefix, indexItems := range prefixes {
+		for index, indexFile := range indexItems.FileNames {
+			if indexFile == fileName {
+				copy(prefixes[prefix].FileNames[index:], prefixes[prefix].FileNames[index+1:])
+				prefixes[prefix].FileNames[len(prefixes[prefix].FileNames)-1] = ""
+				temp, _ := prefixes[prefix]
+				temp.FileNames = prefixes[prefix].FileNames[:len(prefixes[prefix].FileNames)-1]
+				prefixes[prefix] = temp
+				directoryName := fmt.Sprintf("%s/%s/%s", bd.dataLocation, db, blob)
+				err = bd.writeIndexPagesFile(directoryName, prefixes)
+				if err != nil {
+					return err
+				}
+				err = bd.deleteIndexPage(directoryName, fileName)
+				if err != nil {
+					temp, _ = prefixes[prefix]
+					temp.FileNames = append(temp.FileNames, fileName)
+					prefixes[prefix] = temp
+					err = bd.writeIndexPagesFile(directoryName, prefixes)
+					if err != nil {
+						panic(err)
+					}
+				}
+				return nil
+			}
+		}
+	}
+	return errors.New(fmt.Sprintf("could not find index page %s", fileName))
 }
 
 func (bd blobDisk) createPage(directoryName string, pageItem objects.PageItem) error {
