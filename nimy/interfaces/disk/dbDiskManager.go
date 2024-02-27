@@ -2,7 +2,6 @@ package disk
 
 import (
 	"fmt"
-	"io"
 	"os"
 )
 
@@ -33,12 +32,4 @@ func (dbd dbDisk) Delete(db string) error {
 func (dbd dbDisk) Exists(db string) bool {
 	_, err := os.Stat(fmt.Sprintf("%s/%s", dbd.dataLocation, db))
 	return err == nil
-}
-
-func (dbd dbDisk) isEmpty(dir *os.File) (bool, error) {
-	_, err := dir.Readdirnames(1)
-	if err == io.EOF {
-		return true, nil
-	}
-	return false, err
 }

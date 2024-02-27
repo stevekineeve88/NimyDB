@@ -41,3 +41,7 @@ func GetAcceptedBoolValues() []string {
 		BoolValFalse,
 	}
 }
+
+func GetRecordIdPrefix(recordId string) string {
+	return recordId[0:IndexPrefixLength]
+}

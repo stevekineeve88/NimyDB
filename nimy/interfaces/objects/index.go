@@ -1,5 +1,5 @@
 package objects
 
-type IndexItem struct {
+type PrefixIndexItem struct {
 	FileNames []string `json:"fileNames"`
 }

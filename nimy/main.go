@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"nimy/interfaces/disk"
 	"nimy/interfaces/objects"
-	"nimy/interfaces/rules"
 	"nimy/interfaces/store"
 	"os"
 	"strconv"
@@ -19,6 +18,7 @@ func main() {
 	dbDisk := disk.CreateDBDiskManager(dataLocation)
 	blobDisk := disk.CreateBlobDiskManager(dataLocation)
 	blobStore := store.CreateBlobStore(blobDisk)
+	dbStore := store.CreateDBStore(dbDisk)
 	fmt.Println("---WELCOME TO NimyDB-----")
 	var currentDb string
 
@@ -27,12 +27,12 @@ func main() {
 		switch input {
 		case "DELETE DB":
 			db := getInput("Enter DB: ")
-			if err := dbDisk.Delete(db); err != nil {
+			if err := dbStore.DeleteDB(db); err != nil {
 				fmt.Println(err.Error())
 			}
 		case "CREATE DB":
 			db := getInput("Enter DB: ")
-			if err := dbDisk.Create(db); err != nil {
+			if _, err := dbStore.CreateDB(db); err != nil {
 				fmt.Println(err.Error())
 			}
 		case "USE":
@@ -60,16 +60,7 @@ func main() {
 					KeyType: colType,
 				})
 			}
-			blobRules := rules.CreateBlobRules(blob, format)
-			if err := blobRules.CheckBlob(); err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			if err := blobRules.CheckFormatStructure(); err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			if err := blobDisk.Create(currentDb, blob, format); err != nil {
+			if _, err := blobStore.CreateBlob(currentDb, blob, format); err != nil {
 				fmt.Println(err.Error())
 			}
 		case "DELETE BLOB":
@@ -78,7 +69,7 @@ func main() {
 				continue
 			}
 			blob := getInput("Enter Blob Name: ")
-			if err := blobDisk.Delete(currentDb, blob); err != nil {
+			if err := blobDisk.DeleteBlob(currentDb, blob); err != nil {
 				fmt.Println(err.Error())
 			}
 		case "ADD RECORD":
@@ -169,7 +160,6 @@ func simulateAddUsers(size int, bs store.BlobStore) {
 		"Jameson",
 		"Jingle",
 	}
-	count := 1
 	initialRecord := make(map[string]any)
 	initialRecord["full_name"] = fmt.Sprintf("%s %s", firstNames[rand.Intn(3)], lastNames[rand.Intn(3)])
 	initialRecord["is_deleted"] = strconv.Itoa(rand.Intn(2))
@@ -177,19 +167,15 @@ func simulateAddUsers(size int, bs store.BlobStore) {
 	insertRecords := []map[string]any{
 		initialRecord,
 	}
-	for true {
+	for i := 1; i < size; i++ {
 		record := make(map[string]any)
 		record["full_name"] = fmt.Sprintf("%s %s", firstNames[rand.Intn(3)], lastNames[rand.Intn(3)])
 		record["is_deleted"] = strconv.Itoa(rand.Intn(2))
 		record["created"] = strconv.FormatInt(time.Now().Unix(), 10)
 		insertRecords = append(insertRecords, record)
-		count++
-		if count == size {
-			break
-		}
 	}
 	fmt.Println(len(insertRecords))
-	_, err := bs.AddRecordsBulk("app", "users", insertRecords)
+	_, err := bs.AddRecords("app", "users", insertRecords)
 	if err != nil {
 		fmt.Println(err.Error())
 	} else {

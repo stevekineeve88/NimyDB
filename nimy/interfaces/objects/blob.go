@@ -1,47 +1,46 @@
-package rules
+package objects
 
 import (
 	"errors"
 	"fmt"
 	"nimy/constants"
-	"nimy/interfaces/objects"
 	"regexp"
 	"slices"
 	"strconv"
 	"time"
 )
 
-type BlobRules interface {
-	CheckBlob() error
-	CheckFormatStructure() error
+type Blob interface {
+	HasBlobNameConvention() error
+	HasFormatStructure() error
 	FormatRecord(record map[string]any) error
 }
 
-type blobRules struct {
-	blob   string
-	format objects.Format
+type blobObj struct {
+	name   string
+	format Format
 }
 
-func CreateBlobRules(blob string, format objects.Format) BlobRules {
-	return blobRules{
-		blob:   blob,
+func CreateBlob(blob string, format Format) Blob {
+	return blobObj{
+		name:   blob,
 		format: format,
 	}
 }
 
-func (br blobRules) CheckBlob() error {
-	if len(br.blob) > constants.KeyMaxLength {
-		return errors.New(fmt.Sprintf("blob name length on %s exceeds %d", br.blob, constants.BlobMaxLength))
+func (b blobObj) HasBlobNameConvention() error {
+	if len(b.name) > constants.KeyMaxLength {
+		return errors.New(fmt.Sprintf("name name length on %s exceeds %d", b.name, constants.BlobMaxLength))
 	}
-	match, _ := regexp.MatchString(constants.BlobRegex, br.blob)
+	match, _ := regexp.MatchString(constants.BlobRegex, b.name)
 	if !match {
-		return errors.New(fmt.Sprintf("blob name %s does not match %s", br.blob, constants.BlobRegexDesc))
+		return errors.New(fmt.Sprintf("name name %s does not match %s", b.name, constants.BlobRegexDesc))
 	}
 	return nil
 }
 
-func (br blobRules) CheckFormatStructure() error {
-	for key, formatItem := range br.format.GetMap() {
+func (b blobObj) HasFormatStructure() error {
+	for key, formatItem := range b.format.GetMap() {
 		if len(key) > constants.KeyMaxLength {
 			return errors.New(fmt.Sprintf("key length on %s exceeds %d", key, constants.KeyMaxLength))
 		}
@@ -49,23 +48,23 @@ func (br blobRules) CheckFormatStructure() error {
 		if !match {
 			return errors.New(fmt.Sprintf("key %s does not match %s", key, constants.KeyRegexDesc))
 		}
-		if err := br.checkFormatItem(key, formatItem); err != nil {
+		if err := b.checkFormatItem(key, formatItem); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (br blobRules) FormatRecord(record map[string]any) error {
-	if len(br.format.GetMap()) != len(record) {
+func (b blobObj) FormatRecord(record map[string]any) error {
+	if len(b.format.GetMap()) != len(record) {
 		return errors.New("record does not match format length")
 	}
 	for key, value := range record {
-		formatItem, ok := br.format.GetMap()[key]
+		formatItem, ok := b.format.GetMap()[key]
 		if !ok {
-			return errors.New(fmt.Sprintf("key %s does not exist in %s", key, br.blob))
+			return errors.New(fmt.Sprintf("key %s does not exist in %s", key, b.name))
 		}
-		newValue, err := br.convertRecordValue(value.(string), formatItem)
+		newValue, err := b.convertRecordValue(value.(string), formatItem)
 		if err != nil {
 			return errors.New(fmt.Sprintf("error on key %s: %s", key, err.Error()))
 		}
@@ -74,14 +73,14 @@ func (br blobRules) FormatRecord(record map[string]any) error {
 	return nil
 }
 
-func (br blobRules) checkFormatItem(key string, formatItem objects.FormatItem) error {
+func (b blobObj) checkFormatItem(key string, formatItem FormatItem) error {
 	if !slices.Contains(constants.GetFormatTypes(), formatItem.KeyType) {
 		return errors.New(fmt.Sprintf("key type %s does not exist on key %s", formatItem.KeyType, key))
 	}
 	return nil
 }
 
-func (br blobRules) convertRecordValue(value string, formatItem objects.FormatItem) (any, error) {
+func (b blobObj) convertRecordValue(value string, formatItem FormatItem) (any, error) {
 	switch formatItem.KeyType {
 	case constants.String:
 		return value, nil
