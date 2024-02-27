@@ -3,14 +3,11 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"math/rand"
 	"nimy/interfaces/disk"
-	"nimy/interfaces/objects"
+	"nimy/interfaces/parser"
 	"nimy/interfaces/store"
 	"os"
-	"strconv"
 	"strings"
-	"time"
 )
 
 func main() {
@@ -20,11 +17,20 @@ func main() {
 	blobStore := store.CreateBlobStore(blobDisk)
 	dbStore := store.CreateDBStore(dbDisk)
 	fmt.Println("---WELCOME TO NimyDB-----")
-	var currentDb string
+	//var currentDb string
 
 	for true {
 		input := getInput("Enter Command: ")
-		switch input {
+		if input == "DONE" {
+			break
+		}
+		rootParser := parser.CreateRootParser(input)
+		rootParser.AddDBStore(dbStore)
+		rootParser.AddBlobStore(blobStore)
+		if err := rootParser.Parse(); err != nil {
+			fmt.Println(err.Error())
+		}
+		/*switch input {
 		case "DELETE DB":
 			db := getInput("Enter DB: ")
 			if err := dbStore.DeleteDB(db); err != nil {
@@ -142,14 +148,11 @@ func main() {
 			break
 		default:
 			fmt.Printf("COMMAND NOT FOUND: %s \n", input)
-		}
-		if input == "DONE" {
-			break
-		}
+		}*/
 	}
 }
 
-func simulateAddUsers(size int, bs store.BlobStore) {
+/*func simulateAddUsers(size int, bs store.BlobStore) {
 	firstNames := []string{
 		"John",
 		"Jacob",
@@ -181,7 +184,7 @@ func simulateAddUsers(size int, bs store.BlobStore) {
 	} else {
 		fmt.Println("FINISHED INSERTING!!")
 	}
-}
+}*/
 
 func getInput(prompt string) string {
 	reader := bufio.NewReader(os.Stdin)

@@ -23,11 +23,11 @@ func CreateDB(db string) DB {
 
 func (d dbObj) HasDBNameConvention() error {
 	if len(d.name) > constants.KeyMaxLength {
-		return errors.New(fmt.Sprintf("name name length on %s exceeds %d", d.name, constants.DBMaxLength))
+		return errors.New(fmt.Sprintf("name length on %s exceeds %d", d.name, constants.DBMaxLength))
 	}
 	match, _ := regexp.MatchString(constants.DBRegex, d.name)
 	if !match {
-		return errors.New(fmt.Sprintf("name name %s does not match %s", d.name, constants.DBRegexDesc))
+		return errors.New(fmt.Sprintf("name %s does not match %s", d.name, constants.DBRegexDesc))
 	}
 	return nil
 }

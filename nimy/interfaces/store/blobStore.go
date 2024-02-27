@@ -11,6 +11,7 @@ import (
 
 type BlobStore interface {
 	CreateBlob(db string, blob string, format objects.Format) (objects.Blob, error)
+	DeleteBlob(db string, blob string) error
 	AddRecord(db string, blob string, record map[string]any) (string, error)
 	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
 	GetRecord(db string, blob string, recordId string) (map[string]any, error)
@@ -37,6 +38,13 @@ func (bs blobStore) CreateBlob(db string, blob string, format objects.Format) (o
 		return blobObj, err
 	}
 	return blobObj, bs.blobDiskManager.CreateBlob(db, blob, format)
+}
+
+func (bs blobStore) DeleteBlob(db string, blob string) error {
+	if !bs.blobDiskManager.BlobExists(db, blob) {
+		return errors.New(fmt.Sprintf("%s.%s does not exist", db, blob))
+	}
+	return bs.blobDiskManager.DeleteBlob(db, blob)
 }
 
 func (bs blobStore) AddRecord(db string, blob string, record map[string]any) (string, error) {

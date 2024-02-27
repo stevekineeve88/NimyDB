@@ -30,11 +30,11 @@ func CreateBlob(blob string, format Format) Blob {
 
 func (b blobObj) HasBlobNameConvention() error {
 	if len(b.name) > constants.KeyMaxLength {
-		return errors.New(fmt.Sprintf("name name length on %s exceeds %d", b.name, constants.BlobMaxLength))
+		return errors.New(fmt.Sprintf("name length on %s exceeds %d", b.name, constants.BlobMaxLength))
 	}
 	match, _ := regexp.MatchString(constants.BlobRegex, b.name)
 	if !match {
-		return errors.New(fmt.Sprintf("name name %s does not match %s", b.name, constants.BlobRegexDesc))
+		return errors.New(fmt.Sprintf("name %s does not match %s", b.name, constants.BlobRegexDesc))
 	}
 	return nil
 }
