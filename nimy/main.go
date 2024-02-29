@@ -3,34 +3,39 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"nimy/interfaces/disk"
-	"nimy/interfaces/parser"
+	"nimy/interfaces/objects"
 	"nimy/interfaces/store"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
 	dataLocation := "C:\\nimy-data"
 	dbDisk := disk.CreateDBDiskManager(dataLocation)
 	blobDisk := disk.CreateBlobDiskManager(dataLocation)
+	partitionDisk := disk.CreatePartitionDiskManager(dataLocation, blobDisk)
 	blobStore := store.CreateBlobStore(blobDisk)
+	partitionStore := store.CreatePartitionStore(partitionDisk)
 	dbStore := store.CreateDBStore(dbDisk)
 	fmt.Println("---WELCOME TO NimyDB-----")
-	//var currentDb string
+	var currentDb string
 
 	for true {
 		input := getInput("Enter Command: ")
 		if input == "DONE" {
 			break
 		}
-		rootParser := parser.CreateRootParser(input)
+		/*rootParser := parser.CreateRootParser(input)
 		rootParser.AddDBStore(dbStore)
 		rootParser.AddBlobStore(blobStore)
 		if err := rootParser.Parse(); err != nil {
 			fmt.Println(err.Error())
-		}
-		/*switch input {
+		}*/
+		switch input {
 		case "DELETE DB":
 			db := getInput("Enter DB: ")
 			if err := dbStore.DeleteDB(db); err != nil {
@@ -67,6 +72,34 @@ func main() {
 				})
 			}
 			if _, err := blobStore.CreateBlob(currentDb, blob, format); err != nil {
+				fmt.Println(err.Error())
+			}
+		case "CREATE PARTITION":
+			if currentDb == "" {
+				fmt.Println("Not using a database")
+				continue
+			}
+			blob := getInput("Enter Blob Name: ")
+			format := objects.CreateFormat(make(map[string]objects.FormatItem))
+			for true {
+				column := getInput("Enter Column name (DONE if finished): ")
+				if column == "DONE" {
+					break
+				}
+				colType := getInput("Enter a Column Type: ")
+				format.AddItem(column, objects.FormatItem{
+					KeyType: colType,
+				})
+			}
+			partition := objects.Partition{Keys: []string{}}
+			for true {
+				column := getInput("Enter Partition Column name (DONE if finished): ")
+				if column == "DONE" {
+					break
+				}
+				partition.Keys = append(partition.Keys, column)
+			}
+			if _, err := partitionStore.CreatePartition(currentDb, blob, format, partition); err != nil {
 				fmt.Println(err.Error())
 			}
 		case "DELETE BLOB":
@@ -148,11 +181,11 @@ func main() {
 			break
 		default:
 			fmt.Printf("COMMAND NOT FOUND: %s \n", input)
-		}*/
+		}
 	}
 }
 
-/*func simulateAddUsers(size int, bs store.BlobStore) {
+func simulateAddUsers(size int, bs store.BlobStore) {
 	firstNames := []string{
 		"John",
 		"Jacob",
@@ -184,7 +217,7 @@ func main() {
 	} else {
 		fmt.Println("FINISHED INSERTING!!")
 	}
-}*/
+}
 
 func getInput(prompt string) string {
 	reader := bufio.NewReader(os.Stdin)

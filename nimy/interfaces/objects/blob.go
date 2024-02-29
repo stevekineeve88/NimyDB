@@ -13,18 +13,29 @@ import (
 type Blob interface {
 	HasBlobNameConvention() error
 	HasFormatStructure() error
+	HasPartitionStructure() error
 	FormatRecord(record map[string]any) error
 }
 
 type blobObj struct {
-	name   string
-	format Format
+	name      string
+	format    Format
+	partition Partition
 }
 
 func CreateBlob(blob string, format Format) Blob {
 	return blobObj{
-		name:   blob,
-		format: format,
+		name:      blob,
+		format:    format,
+		partition: Partition{Keys: []string{}},
+	}
+}
+
+func CreateBlobWithPartition(blob string, format Format, partition Partition) Blob {
+	return blobObj{
+		name:      blob,
+		format:    format,
+		partition: partition,
 	}
 }
 
@@ -50,6 +61,17 @@ func (b blobObj) HasFormatStructure() error {
 		}
 		if err := b.checkFormatItem(key, formatItem); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func (b blobObj) HasPartitionStructure() error {
+	formatMap := b.format.GetMap()
+	for _, partitionKey := range b.partition.Keys {
+		_, ok := formatMap[partitionKey]
+		if !ok {
+			return errors.New(fmt.Sprintf("partition key %s not found in format", partitionKey))
 		}
 	}
 	return nil
