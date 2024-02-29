@@ -90,6 +90,12 @@ func (b blobObj) convertRecordValue(value string, formatItem FormatItem) (any, e
 			return nil, err
 		}
 		return intConv, nil
+	case constants.Float:
+		floatConv, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return nil, err
+		}
+		return floatConv, nil
 	case constants.Bool:
 		if !slices.Contains(constants.GetAcceptedBoolValues(), value) {
 			return nil, errors.New(fmt.Sprintf("%s is not an accepted boolean value", value))
@@ -101,6 +107,13 @@ func (b blobObj) convertRecordValue(value string, formatItem FormatItem) (any, e
 			return nil, err
 		}
 		return time.Unix(intConv, 0), nil
+	case constants.Date:
+		intConv, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		timeConv := time.Unix(intConv, 0)
+		return timeConv.Format(time.DateOnly), nil
 	}
 	return nil, errors.New("type not handled")
 }

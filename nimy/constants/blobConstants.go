@@ -5,6 +5,8 @@ const (
 	Int      = "int"
 	Bool     = "bool"
 	DateTime = "datetime"
+	Date     = "date"
+	Float    = "float"
 
 	KeyMaxLength = 45
 	KeyRegex     = "^[a-z_]*$"
@@ -32,6 +34,8 @@ func GetFormatTypes() []string {
 		Int,
 		Bool,
 		DateTime,
+		Date,
+		Float,
 	}
 }
 
