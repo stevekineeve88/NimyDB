@@ -1,6 +1,5 @@
 package constants
 
 const (
-	PartitionsFile     = "partitions.json"
-	MaxPartitionLength = 100000
+	PartitionsFile = "partitions.json"
 )

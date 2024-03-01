@@ -11,11 +11,11 @@ import (
 
 type PartitionDiskManager interface {
 	CreatePartition(db string, blob string, format objects.Format, partition objects.Partition) error
-	CreatePartitionPage(db string, blob string, hashKey string) (objects.PartitionItem, error)
-	CreatePartitionPagesFile(db string, blob string) error
 	CreatePartitionsFile(db string, blob string, partition objects.Partition) error
-	GetPartitionPageItems(db string, blob string) (map[string]objects.PartitionItem, error)
+	CreatePartitionHashKeyItem(db string, blob string, hashKey string) error
+	CreatePartitionHashKeyFile(db string, blob string, hashKey string) (objects.PartitionItem, error)
 	GetPartition(db string, blob string) (objects.Partition, error)
+	GetPartitionHashKeyItem(db string, blob string, hashKey string) (objects.PartitionItem, error)
 }
 
 type partitionDiskManager struct {
@@ -43,7 +43,7 @@ func (pdm partitionDiskManager) CreatePartition(db string, blob string, format o
 		func(db string, blob string) error {
 			return pdm.CreatePartitionsFile(db, blob, partition)
 		},
-		pdm.CreatePartitionPagesFile,
+		pdm.blobDiskManager.CreatePagesFile,
 		pdm.blobDiskManager.CreateIndexesFile,
 	}
 
@@ -61,55 +61,46 @@ func (pdm partitionDiskManager) CreatePartition(db string, blob string, format o
 	return nil
 }
 
-func (pdm partitionDiskManager) CreatePartitionPage(db string, blob string, hashKey string) (objects.PartitionItem, error) {
-	partitionPageItem := objects.PartitionItem{FileNames: []string{}}
-	partitionPageItemMap, err := pdm.GetPartitionPageItems(db, blob)
-	if err != nil {
-		return partitionPageItem, err
-	}
-	blobDirectory := fmt.Sprintf("%s/%s/%s", pdm.dataLocation, db, blob)
-	tempPartitionPageItem, ok := partitionPageItemMap[hashKey]
-	if ok {
-		partitionPageItem = tempPartitionPageItem
-	}
-	partitionPageFileName := fmt.Sprintf("partition-%s.json", uuid.New().String())
-	pageData, _ := json.MarshalIndent(make(map[string]interface{}), "", " ")
-	err = pdm.blobDiskManager.CreateFile(blobDirectory, pageData, partitionPageFileName)
-	if err != nil {
-		return partitionPageItem, err
-	}
-	partitionPageItem.FileNames = append(partitionPageItem.FileNames, partitionPageFileName)
-	partitionPageItemMap[hashKey] = partitionPageItem
-	err = pdm.writePartitionPagesFile(blobDirectory, partitionPageItemMap)
-	if err != nil {
-		deletePartitionPageError := os.Remove(fmt.Sprintf("%s/%s", blobDirectory, partitionPageFileName))
-		if deletePartitionPageError != nil {
-			panic(deletePartitionPageError.Error())
-		}
-		return partitionPageItem, err
-	}
-	return partitionPageItem, nil
-}
-
 func (pdm partitionDiskManager) CreatePartitionsFile(db string, blob string, partition objects.Partition) error {
 	partitionData, _ := json.MarshalIndent(partition, "", " ")
 	return pdm.blobDiskManager.CreateFile(fmt.Sprintf("%s/%s/%s", pdm.dataLocation, db, blob), partitionData, constants.PartitionsFile)
 }
 
-func (pdm partitionDiskManager) CreatePartitionPagesFile(db string, blob string) error {
-	pageData, _ := json.MarshalIndent(make(map[string]objects.PartitionItem), "", " ")
-	return pdm.blobDiskManager.CreateFile(fmt.Sprintf("%s/%s/%s", pdm.dataLocation, db, blob), pageData, constants.PagesFile)
+func (pdm partitionDiskManager) CreatePartitionHashKeyItem(db string, blob string, hashKey string) error {
+	partitionHashKeyItemsData, _ := json.MarshalIndent(objects.PartitionItem{FileNames: []string{}}, "", " ")
+	return pdm.blobDiskManager.CreateFile(fmt.Sprintf("%s/%s/%s", pdm.dataLocation, db, blob), partitionHashKeyItemsData, hashKey+".json")
 }
 
-func (pdm partitionDiskManager) GetPartitionPageItems(db string, blob string) (map[string]objects.PartitionItem, error) {
-	var partitionPageItemsMap map[string]objects.PartitionItem
-	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", pdm.dataLocation, db, blob, constants.PagesFile))
+func (pdm partitionDiskManager) CreatePartitionHashKeyFile(db string, blob string, hashKey string) (objects.PartitionItem, error) {
+	partitionItem := objects.PartitionItem{FileNames: []string{}}
+	partitionItem, err := pdm.GetPartitionHashKeyItem(db, blob, hashKey)
 	if err != nil {
-		return nil, err
+		return partitionItem, err
 	}
+	pagesItems, err := pdm.blobDiskManager.GetPageItems(db, blob)
+	if err != nil {
+		return partitionItem, err
+	}
+	blobDirectory := fmt.Sprintf("%s/%s/%s", pdm.dataLocation, db, blob)
 
-	unmarshalError := json.Unmarshal(file, &partitionPageItemsMap)
-	return partitionPageItemsMap, unmarshalError
+	partitionFileName := fmt.Sprintf("page-%s.json", uuid.New().String())
+	partitionItem.FileNames = append(partitionItem.FileNames, partitionFileName)
+	pagesItems = append(pagesItems, objects.PageItem{FileName: partitionFileName})
+
+	pageData, _ := json.MarshalIndent(make(map[string]interface{}), "", " ")
+	err = pdm.blobDiskManager.CreateFile(blobDirectory, pageData, partitionFileName)
+	if err != nil {
+		return partitionItem, err
+	}
+	err = pdm.WritePartitionHashKeyItem(blobDirectory, hashKey, partitionItem)
+	if err != nil {
+		deletePageError := os.Remove(fmt.Sprintf("%s/%s", blobDirectory, partitionFileName))
+		if deletePageError != nil {
+			panic(deletePageError.Error())
+		}
+		return partitionItem, err
+	}
+	return partitionItem, pdm.blobDiskManager.WritePagesFile(blobDirectory, pagesItems)
 }
 
 func (pdm partitionDiskManager) GetPartition(db string, blob string) (objects.Partition, error) {
@@ -123,7 +114,18 @@ func (pdm partitionDiskManager) GetPartition(db string, blob string) (objects.Pa
 	return partition, unmarshalError
 }
 
-func (pdm partitionDiskManager) writePartitionPagesFile(directoryName string, partitionPageItemMap map[string]objects.PartitionItem) error {
-	pagesData, _ := json.MarshalIndent(partitionPageItemMap, "", " ")
-	return pdm.blobDiskManager.WriteFile(directoryName, pagesData, constants.PagesFile)
+func (pdm partitionDiskManager) GetPartitionHashKeyItem(db string, blob string, hashKey string) (objects.PartitionItem, error) {
+	var partitionItems objects.PartitionItem
+	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", pdm.dataLocation, db, blob, hashKey+".json"))
+	if err != nil {
+		return partitionItems, err
+	}
+
+	unmarshalError := json.Unmarshal(file, &partitionItems)
+	return partitionItems, unmarshalError
+}
+
+func (pdm partitionDiskManager) WritePartitionHashKeyItem(directoryName string, hashKey string, partitionItem objects.PartitionItem) error {
+	partitionItemData, _ := json.MarshalIndent(partitionItem, "", " ")
+	return pdm.blobDiskManager.WriteFile(directoryName, partitionItemData, hashKey+".json")
 }

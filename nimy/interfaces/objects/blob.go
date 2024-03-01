@@ -15,6 +15,7 @@ type Blob interface {
 	HasFormatStructure() error
 	HasPartitionStructure() error
 	FormatRecord(record map[string]any) error
+	GetPartition() Partition
 }
 
 type blobObj struct {
@@ -93,6 +94,10 @@ func (b blobObj) FormatRecord(record map[string]any) error {
 		record[key] = newValue
 	}
 	return nil
+}
+
+func (b blobObj) GetPartition() Partition {
+	return b.partition
 }
 
 func (b blobObj) checkFormatItem(key string, formatItem FormatItem) error {

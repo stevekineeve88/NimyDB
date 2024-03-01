@@ -19,7 +19,7 @@ func main() {
 	blobDisk := disk.CreateBlobDiskManager(dataLocation)
 	partitionDisk := disk.CreatePartitionDiskManager(dataLocation, blobDisk)
 	blobStore := store.CreateBlobStore(blobDisk)
-	partitionStore := store.CreatePartitionStore(partitionDisk)
+	partitionStore := store.CreatePartitionStore(partitionDisk, blobDisk, blobStore)
 	dbStore := store.CreateDBStore(dbDisk)
 	fmt.Println("---WELCOME TO NimyDB-----")
 	var currentDb string
@@ -47,7 +47,7 @@ func main() {
 				fmt.Println(err.Error())
 			}
 		case "USE":
-			useInput := getInput("Enter Db Name: ")
+			useInput := getInput("Enter Db name: ")
 			if !dbDisk.Exists(useInput) {
 				fmt.Println("Database does not exist...")
 				continue
@@ -59,7 +59,7 @@ func main() {
 				fmt.Println("Not using a database")
 				continue
 			}
-			blob := getInput("Enter Blob Name: ")
+			blob := getInput("Enter Blob name: ")
 			format := objects.CreateFormat(nil)
 			for true {
 				column := getInput("Enter Column name (DONE if finished): ")
@@ -79,7 +79,7 @@ func main() {
 				fmt.Println("Not using a database")
 				continue
 			}
-			blob := getInput("Enter Blob Name: ")
+			blob := getInput("Enter Blob name: ")
 			format := objects.CreateFormat(make(map[string]objects.FormatItem))
 			for true {
 				column := getInput("Enter Column name (DONE if finished): ")
@@ -93,7 +93,7 @@ func main() {
 			}
 			partition := objects.Partition{Keys: []string{}}
 			for true {
-				column := getInput("Enter Partition Column name (DONE if finished): ")
+				column := getInput("Enter partition Column name (DONE if finished): ")
 				if column == "DONE" {
 					break
 				}
@@ -107,7 +107,7 @@ func main() {
 				fmt.Println("Not using a database")
 				continue
 			}
-			blob := getInput("Enter Blob Name: ")
+			blob := getInput("Enter Blob name: ")
 			if err := blobDisk.DeleteBlob(currentDb, blob); err != nil {
 				fmt.Println(err.Error())
 			}
@@ -116,7 +116,7 @@ func main() {
 				fmt.Println("Not using a database")
 				continue
 			}
-			blob := getInput("Enter Blob Name: ")
+			blob := getInput("Enter Blob name: ")
 			format, err := blobDisk.GetFormat(currentDb, blob)
 			if err != nil {
 				fmt.Println(err.Error())
@@ -137,10 +137,10 @@ func main() {
 				fmt.Println("Not using a database")
 				continue
 			}
-			blob := getInput("Enter Blob Name: ")
+			blob := getInput("Enter Blob name: ")
 			recordId := getInput("Enter Record ID: ")
 			start := time.Now()
-			record, err := blobStore.GetRecord(currentDb, blob, recordId)
+			record, err := blobStore.GetRecordByIndex(currentDb, blob, recordId)
 			if err != nil {
 				fmt.Println(err.Error())
 				continue
@@ -152,7 +152,7 @@ func main() {
 				fmt.Println("Not using a database")
 				continue
 			}
-			blob := getInput("Enter Blob Name: ")
+			blob := getInput("Enter Blob name: ")
 			recordId := getInput("Enter Record ID: ")
 			start := time.Now()
 			record, err := blobStore.GetRecordFullScan(currentDb, blob, recordId)
@@ -167,7 +167,7 @@ func main() {
 				fmt.Println("Not using a database")
 				continue
 			}
-			blob := getInput("Enter Blob Name: ")
+			blob := getInput("Enter Blob name: ")
 			recordId := getInput("Enter Record ID: ")
 			err := blobStore.DeleteRecord(currentDb, blob, recordId)
 			if err != nil {
@@ -177,6 +177,9 @@ func main() {
 		case "SIMULATE MASS ADD":
 			size, _ := strconv.Atoi(getInput("Size of set: "))
 			simulateAddUsers(size, blobStore)
+		case "SIMULATE MASS PARTITION":
+			size, _ := strconv.Atoi(getInput("Size of set: "))
+			simulateAddLogs(size, partitionStore)
 		case "DONE":
 			break
 		default:
@@ -212,6 +215,45 @@ func simulateAddUsers(size int, bs store.BlobStore) {
 	}
 	fmt.Println(len(insertRecords))
 	_, err := bs.AddRecords("app", "users", insertRecords)
+	if err != nil {
+		fmt.Println(err.Error())
+	} else {
+		fmt.Println("FINISHED INSERTING!!")
+	}
+}
+
+func simulateAddLogs(size int, ps store.PartitionStore) {
+	userIds := []string{
+		"12345",
+		"11111",
+		"90888",
+	}
+	logDates := []string{
+		"1707422535",
+		"1708372935",
+		"1709305335",
+	}
+	comments := []string{
+		"Had breakfast yum yum",
+		"Why hello. Another log here please",
+		"Just passing through",
+	}
+	initialRecord := make(map[string]any)
+	initialRecord["user_id"] = userIds[rand.Intn(3)]
+	initialRecord["comments"] = comments[rand.Intn(3)]
+	initialRecord["log_date"] = logDates[rand.Intn(3)]
+	insertRecords := []map[string]any{
+		initialRecord,
+	}
+	for i := 1; i < size; i++ {
+		record := make(map[string]any)
+		record["user_id"] = userIds[rand.Intn(3)]
+		record["comments"] = comments[rand.Intn(3)]
+		record["log_date"] = logDates[rand.Intn(3)]
+		insertRecords = append(insertRecords, record)
+	}
+	fmt.Println(len(insertRecords))
+	_, err := ps.AddRecords("app", "user_logs", insertRecords)
 	if err != nil {
 		fmt.Println(err.Error())
 	} else {
