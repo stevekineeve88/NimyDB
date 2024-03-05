@@ -5,11 +5,13 @@ import (
 	"nimy/constants"
 	"nimy/interfaces/disk"
 	"nimy/interfaces/objects"
+	"strings"
 )
 
 type PartitionStore interface {
 	CreatePartition(db string, blob string, format objects.Format, partition objects.Partition) (objects.Blob, error)
 	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
+	GetRecordsByPartition(db string, blob string, searchPartition map[string]any) (map[string]map[string]any, error)
 }
 
 type partitionStore struct {
@@ -78,6 +80,39 @@ func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[
 	return lastRecordId, nil
 }
 
+func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPartition map[string]any) (map[string]map[string]any, error) {
+	partitionHashKeyFileNames, err := ps.partitionDiskManager.GetPartitionHashKeyItemFileNames(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	partition, err := ps.partitionDiskManager.GetPartition(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	partitionHashKeyFileNames, err = ps.filterPartitionFiles(partitionHashKeyFileNames, partition, searchPartition)
+	if err != nil {
+		return nil, err
+	}
+	recordMap := make(map[string]map[string]any)
+	for _, partitionHashKeyFileName := range partitionHashKeyFileNames {
+		hashKey := strings.Split(partitionHashKeyFileName, ".json")[0]
+		partitionItem, err := ps.partitionDiskManager.GetPartitionHashKeyItem(db, blob, hashKey)
+		if err != nil {
+			return recordMap, err
+		}
+		for _, pageFile := range partitionItem.FileNames {
+			currentRecordMap, err := ps.blobDiskManager.GetPageData(db, blob, pageFile)
+			if err != nil {
+				return recordMap, err
+			}
+			for k, v := range currentRecordMap {
+				recordMap[k] = v
+			}
+		}
+	}
+	return recordMap, nil
+}
+
 func (ps partitionStore) addPartitionedRecords(db string, blob string, hashKey string, insertRecords []map[string]any) (string, error) {
 	partitionItem, err := ps.partitionDiskManager.GetPartitionHashKeyItem(db, blob, hashKey)
 	if err != nil {
@@ -121,4 +156,32 @@ func (ps partitionStore) addPartitionedRecords(db string, blob string, hashKey s
 		return lastRecordId, err
 	}
 	return lastRecordId, ps.blobStore.AddIndexes(db, blob, indexMap)
+}
+
+func (ps partitionStore) filterPartitionFiles(partitionHashKeyFileNames []string, partition objects.Partition, partitionSearch map[string]any) ([]string, error) {
+	var foundFiles []string
+	for _, partitionHashKeyFileName := range partitionHashKeyFileNames {
+		currentChar := 0
+		found := true
+		for _, partitionKey := range partition.Keys {
+			_, ok := partitionSearch[partitionKey]
+			if !ok {
+				currentChar += 28
+				continue
+			}
+			valueHash, err := partition.GetPartitionHashKeyItem(partitionKey, partitionSearch)
+			if err != nil {
+				return nil, err
+			}
+			if partitionHashKeyFileName[currentChar:currentChar+len(valueHash)] != valueHash {
+				found = false
+				break
+			}
+			currentChar += 28
+		}
+		if found {
+			foundFiles = append(foundFiles, partitionHashKeyFileName)
+		}
+	}
+	return foundFiles, nil
 }

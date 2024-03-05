@@ -7,6 +7,7 @@ import (
 	"nimy/constants"
 	"nimy/interfaces/objects"
 	"os"
+	"strings"
 )
 
 type PartitionDiskManager interface {
@@ -16,6 +17,7 @@ type PartitionDiskManager interface {
 	CreatePartitionHashKeyFile(db string, blob string, hashKey string) (objects.PartitionItem, error)
 	GetPartition(db string, blob string) (objects.Partition, error)
 	GetPartitionHashKeyItem(db string, blob string, hashKey string) (objects.PartitionItem, error)
+	GetPartitionHashKeyItemFileNames(db string, blob string) ([]string, error)
 }
 
 type partitionDiskManager struct {
@@ -123,6 +125,46 @@ func (pdm partitionDiskManager) GetPartitionHashKeyItem(db string, blob string, 
 
 	unmarshalError := json.Unmarshal(file, &partitionItems)
 	return partitionItems, unmarshalError
+}
+
+func (pdm partitionDiskManager) GetPartitionHashKeyItemFileNames(db string, blob string) ([]string, error) {
+	files, err := os.ReadDir(fmt.Sprintf("%s/%s/%s", pdm.dataLocation, db, blob))
+	if err != nil {
+		return nil, err
+	}
+	staticFiles := []string{
+		constants.FormatFile,
+		constants.IndexesFile,
+		constants.PartitionsFile,
+		constants.PagesFile,
+	}
+	staticPrefixes := []string{
+		"index-",
+		"page-",
+	}
+	var partitionHashKeyItemFileNames []string
+	for _, file := range files {
+		isPartitionFile := true
+		for _, staticFile := range staticFiles {
+			if staticFile == file.Name() {
+				isPartitionFile = false
+				break
+			}
+		}
+		if !isPartitionFile {
+			continue
+		}
+		for _, staticPrefix := range staticPrefixes {
+			if strings.HasPrefix(file.Name(), staticPrefix) {
+				isPartitionFile = false
+				break
+			}
+		}
+		if isPartitionFile {
+			partitionHashKeyItemFileNames = append(partitionHashKeyItemFileNames, file.Name())
+		}
+	}
+	return partitionHashKeyItemFileNames, nil
 }
 
 func (pdm partitionDiskManager) WritePartitionHashKeyItem(directoryName string, hashKey string, partitionItem objects.PartitionItem) error {

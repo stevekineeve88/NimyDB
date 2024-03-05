@@ -147,6 +147,24 @@ func main() {
 			}
 			fmt.Println(time.Now().Sub(start).Seconds())
 			fmt.Println(record)
+		case "GET RECORDS PARTITION":
+			if currentDb == "" {
+				fmt.Println("Not using a database")
+				continue
+			}
+			blob := getInput("Enter Blob name: ")
+			searchPartition := make(map[string]any)
+			for true {
+				partition := getInput("Enter partition to search (DONE if finished): ")
+				if partition == "DONE" {
+					break
+				}
+				value := getInput("Enter value to search: ")
+				searchPartition[partition] = value
+			}
+			recordMap, _ := partitionStore.GetRecordsByPartition(currentDb, blob, searchPartition)
+			display(recordMap, 100)
+
 		case "GET RECORD OLD":
 			if currentDb == "" {
 				fmt.Println("Not using a database")
@@ -178,8 +196,7 @@ func main() {
 			size, _ := strconv.Atoi(getInput("Size of set: "))
 			simulateAddUsers(size, blobStore)
 		case "SIMULATE MASS PARTITION":
-			size, _ := strconv.Atoi(getInput("Size of set: "))
-			simulateAddLogs(size, partitionStore)
+			simulateAddLogs(partitionStore)
 		case "DONE":
 			break
 		default:
@@ -222,35 +239,33 @@ func simulateAddUsers(size int, bs store.BlobStore) {
 	}
 }
 
-func simulateAddLogs(size int, ps store.PartitionStore) {
-	userIds := []string{
-		"12345",
-		"11111",
-		"90888",
-	}
-	logDates := []string{
-		"1707422535",
-		"1708372935",
-		"1709305335",
+func simulateAddLogs(ps store.PartitionStore) {
+	categories := []string{
+		"A",
+		"B",
+		"C",
+		"D",
+		"E",
+		"F",
 	}
 	comments := []string{
 		"Had breakfast yum yum",
 		"Why hello. Another log here please",
 		"Just passing through",
+		"N/A",
 	}
-	initialRecord := make(map[string]any)
-	initialRecord["user_id"] = userIds[rand.Intn(3)]
-	initialRecord["comments"] = comments[rand.Intn(3)]
-	initialRecord["log_date"] = logDates[rand.Intn(3)]
-	insertRecords := []map[string]any{
-		initialRecord,
-	}
-	for i := 1; i < size; i++ {
-		record := make(map[string]any)
-		record["user_id"] = userIds[rand.Intn(3)]
-		record["comments"] = comments[rand.Intn(3)]
-		record["log_date"] = logDates[rand.Intn(3)]
-		insertRecords = append(insertRecords, record)
+	var insertRecords []map[string]any
+	currentDate := time.Date(2024, 01, 01, 0, 0, 0, 0, time.Local)
+	endDate := time.Date(2024, 12, 31, 0, 0, 0, 0, time.Local)
+	for currentDate.Unix() < endDate.Unix() {
+		for _, category := range categories {
+			record := make(map[string]any)
+			record["category"] = category
+			record["comments"] = comments[rand.Intn(3)]
+			record["log_date"] = strconv.FormatInt(currentDate.Unix(), 10)
+			insertRecords = append(insertRecords, record)
+		}
+		currentDate = currentDate.Add(time.Hour * 24)
 	}
 	fmt.Println(len(insertRecords))
 	_, err := ps.AddRecords("app", "user_logs", insertRecords)
@@ -267,4 +282,15 @@ func getInput(prompt string) string {
 	text, _ := reader.ReadString('\n')
 	text = strings.TrimSpace(text)
 	return text
+}
+
+func display(recordMap map[string]map[string]any, size int) {
+	count := 1
+	for key, value := range recordMap {
+		if count > size {
+			break
+		}
+		fmt.Printf("ID: %s, Record: %+v\n", key, value)
+		count++
+	}
 }
