@@ -196,7 +196,9 @@ func main() {
 			size, _ := strconv.Atoi(getInput("Size of set: "))
 			simulateAddUsers(size, blobStore)
 		case "SIMULATE MASS PARTITION":
-			simulateAddLogs(partitionStore)
+			startYear, _ := strconv.Atoi(getInput("Start Year: "))
+			endYear, _ := strconv.Atoi(getInput("End Year: "))
+			simulateAddLogs(startYear, endYear, partitionStore)
 		case "DONE":
 			break
 		default:
@@ -239,7 +241,7 @@ func simulateAddUsers(size int, bs store.BlobStore) {
 	}
 }
 
-func simulateAddLogs(ps store.PartitionStore) {
+func simulateAddLogs(startYear int, endYear int, ps store.PartitionStore) {
 	categories := []string{
 		"A",
 		"B",
@@ -255,17 +257,21 @@ func simulateAddLogs(ps store.PartitionStore) {
 		"N/A",
 	}
 	var insertRecords []map[string]any
-	currentDate := time.Date(2024, 01, 01, 0, 0, 0, 0, time.Local)
-	endDate := time.Date(2024, 12, 31, 0, 0, 0, 0, time.Local)
-	for currentDate.Unix() < endDate.Unix() {
-		for _, category := range categories {
-			record := make(map[string]any)
-			record["category"] = category
-			record["comments"] = comments[rand.Intn(3)]
-			record["log_date"] = strconv.FormatInt(currentDate.Unix(), 10)
-			insertRecords = append(insertRecords, record)
+	for startYear <= endYear {
+		currentDate := time.Date(startYear, 01, 01, 0, 0, 0, 0, time.Local)
+		endDate := time.Date(startYear, 12, 31, 0, 0, 0, 0, time.Local)
+		for currentDate.Unix() < endDate.Unix() {
+			for _, category := range categories {
+				record := make(map[string]any)
+				record["category"] = category
+				record["comments"] = comments[rand.Intn(3)]
+				record["log_date"] = strconv.FormatInt(currentDate.Unix(), 10)
+				record["rank"] = strconv.Itoa(rand.Intn(10))
+				insertRecords = append(insertRecords, record)
+			}
+			currentDate = currentDate.Add(time.Hour * 24)
 		}
-		currentDate = currentDate.Add(time.Hour * 24)
+		startYear++
 	}
 	fmt.Println(len(insertRecords))
 	_, err := ps.AddRecords("app", "user_logs", insertRecords)

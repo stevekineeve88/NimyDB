@@ -24,8 +24,10 @@ const (
 	IndexPrefixLength = 2
 
 	PagesFile   = "pages.json"
+	PagesDir    = "pages"
 	FormatFile  = "format.json"
 	IndexesFile = "indexes.json"
+	IndexesDir  = "indexes"
 )
 
 func GetFormatTypes() []string {
