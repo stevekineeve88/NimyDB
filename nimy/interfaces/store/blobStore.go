@@ -12,8 +12,7 @@ import (
 type BlobStore interface {
 	CreateBlob(db string, blob string, format objects.Format) (objects.Blob, error)
 	DeleteBlob(db string, blob string) error
-	AddRecord(db string, blob string, record map[string]any) (string, error)
-	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
+	AddRecords(db string, blob string, insertRecords []map[string]string) (string, error)
 	GetRecordByIndex(db string, blob string, recordId string) (map[string]any, error)
 	GetRecordFullScan(db string, blob string, recordId string) (map[string]any, error)
 	DeleteRecord(db string, blob string, recordId string) error
@@ -48,11 +47,7 @@ func (bs blobStore) DeleteBlob(db string, blob string) error {
 	return bs.blobDiskManager.DeleteBlob(db, blob)
 }
 
-func (bs blobStore) AddRecord(db string, blob string, record map[string]any) (string, error) {
-	return bs.AddRecords(db, blob, []map[string]any{record})
-}
-
-func (bs blobStore) AddRecords(db string, blob string, insertRecords []map[string]any) (string, error) {
+func (bs blobStore) AddRecords(db string, blob string, insertRecords []map[string]string) (string, error) {
 	format, err := bs.blobDiskManager.GetFormat(db, blob)
 	if err != nil {
 		return "", err
@@ -70,12 +65,12 @@ func (bs blobStore) AddRecords(db string, blob string, insertRecords []map[strin
 	lastRecordId := ""
 	indexMap := make(map[string]string)
 	for _, insertRecord := range insertRecords {
-		err = blobObj.FormatRecord(insertRecord)
+		newInsertRecord, err := blobObj.FormatRecord(insertRecord)
 		if err != nil {
 			return lastRecordId, err
 		}
 		lastRecordId = uuid.New().String()
-		recordMap[lastRecordId] = insertRecord
+		recordMap[lastRecordId] = newInsertRecord
 		indexMap[lastRecordId] = currentLastPage.FileName
 		if len(recordMap) > constants.MaxPageSize/len(format.GetMap()) {
 			err = bs.blobDiskManager.WritePageData(db, blob, currentLastPage.FileName, recordMap)

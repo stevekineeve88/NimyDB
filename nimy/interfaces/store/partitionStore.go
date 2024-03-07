@@ -10,8 +10,9 @@ import (
 
 type PartitionStore interface {
 	CreatePartition(db string, blob string, format objects.Format, partition objects.Partition) (objects.Blob, error)
-	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
+	AddRecords(db string, blob string, insertRecords []map[string]string) (string, error)
 	GetRecordsByPartition(db string, blob string, searchPartition map[string]any) (map[string]map[string]any, error)
+	IsPartition(db string, blob string) bool
 }
 
 type partitionStore struct {
@@ -42,7 +43,7 @@ func (ps partitionStore) CreatePartition(db string, blob string, format objects.
 	return blobObj, ps.partitionDiskManager.CreatePartition(db, blob, format, partition)
 }
 
-func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[string]any) (string, error) {
+func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[string]string) (string, error) {
 	format, err := ps.blobDiskManager.GetFormat(db, blob)
 	if err != nil {
 		return "", err
@@ -55,11 +56,11 @@ func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[
 	blobObj := objects.CreateBlobWithPartition(blob, format, partition)
 	partitionHashMap := make(map[string][]map[string]any)
 	for _, insertRecord := range insertRecords {
-		err = blobObj.FormatRecord(insertRecord)
+		newInsertRecord, err := blobObj.FormatRecord(insertRecord)
 		if err != nil {
 			return "", err
 		}
-		partitionHashKey, err := blobObj.GetPartition().GetPartitionHashKey(insertRecord)
+		partitionHashKey, err := blobObj.GetPartition().GetPartitionHashKey(newInsertRecord)
 		if err != nil {
 			return "", err
 		}
@@ -67,7 +68,7 @@ func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[
 		if !ok {
 			partitionHashMap[partitionHashKey] = []map[string]any{}
 		}
-		partitionHashMap[partitionHashKey] = append(partitionHashMap[partitionHashKey], insertRecord)
+		partitionHashMap[partitionHashKey] = append(partitionHashMap[partitionHashKey], newInsertRecord)
 	}
 
 	lastRecordId := ""
@@ -111,6 +112,11 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 		}
 	}
 	return recordMap, nil
+}
+
+func (ps partitionStore) IsPartition(db string, blob string) bool {
+	_, err := ps.partitionDiskManager.GetPartition(db, blob)
+	return err == nil
 }
 
 func (ps partitionStore) addPartitionedRecords(db string, blob string, hashKey string, insertRecords []map[string]any) (string, error) {

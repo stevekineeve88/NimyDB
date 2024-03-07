@@ -14,7 +14,7 @@ type Blob interface {
 	HasBlobNameConvention() error
 	HasFormatStructure() error
 	HasPartitionStructure() error
-	FormatRecord(record map[string]any) error
+	FormatRecord(record map[string]string) (map[string]any, error)
 	GetPartition() Partition
 }
 
@@ -78,22 +78,23 @@ func (b blobObj) HasPartitionStructure() error {
 	return nil
 }
 
-func (b blobObj) FormatRecord(record map[string]any) error {
+func (b blobObj) FormatRecord(record map[string]string) (map[string]any, error) {
 	if len(b.format.GetMap()) != len(record) {
-		return errors.New("record does not match format length")
+		return nil, errors.New("record does not match format length")
 	}
+	newRecord := make(map[string]any)
 	for key, value := range record {
 		formatItem, ok := b.format.GetMap()[key]
 		if !ok {
-			return errors.New(fmt.Sprintf("key %s does not exist in %s", key, b.name))
+			return nil, errors.New(fmt.Sprintf("key %s does not exist in %s", key, b.name))
 		}
-		newValue, err := b.convertRecordValue(value.(string), formatItem)
+		newValue, err := b.convertRecordValue(value, formatItem)
 		if err != nil {
-			return errors.New(fmt.Sprintf("error on key %s: %s", key, err.Error()))
+			return nil, errors.New(fmt.Sprintf("error on key %s: %s", key, err.Error()))
 		}
-		record[key] = newValue
+		newRecord[key] = newValue
 	}
-	return nil
+	return newRecord, nil
 }
 
 func (b blobObj) GetPartition() Partition {
