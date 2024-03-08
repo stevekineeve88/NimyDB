@@ -102,6 +102,8 @@ func parseObject(objectType string, element string) (interface{}, error) {
 	case constants.TokenObjectIDObj:
 		_, err := uuid.Parse(element)
 		return element, err
+	case constants.TokenObjectsObj:
+		return parseMapList(element)
 	default:
 		return nil, errors.New(fmt.Sprintf("object type %s does not exist", objectType))
 	}
@@ -138,6 +140,8 @@ func parseMap(element string) (map[string]string, error) {
 			currentKey = ""
 			currentToken = ""
 			parsingValue = false
+		case "{":
+			return nil, errors.New("object collision detected. possibly missing }")
 		default:
 			currentToken += currentChar
 		}
@@ -176,6 +180,53 @@ func parseArray(element string) ([]string, error) {
 	}
 	arrayElements = append(arrayElements, currentToken)
 	return arrayElements, nil
+}
+
+func parseMapList(element string) ([]map[string]string, error) {
+	var arrayMaps []map[string]string
+	var currentMap map[string]string
+	searchingMapStart := true
+	index := 0
+	for index < len(element) {
+		currentChar := element[index : index+1]
+		switch currentChar {
+		case "{":
+			if !searchingMapStart {
+				return nil, errors.New("missing , in object list")
+			}
+			index++
+			newIndex, mapElement, hitEnd := parseElement(index, element, "}")
+			if !hitEnd {
+				return nil, errors.New("missing ending character: }")
+			}
+			parsedMap, err := parseMap(mapElement)
+			if err != nil {
+				return nil, err
+			}
+			currentMap = parsedMap
+			index = newIndex
+			searchingMapStart = false
+		case ",":
+			if currentMap == nil {
+				return nil, errors.New("misplaced , in object list")
+			}
+			arrayMaps = append(arrayMaps, currentMap)
+			currentMap = nil
+			searchingMapStart = true
+		case " ":
+			index++
+			continue
+		default:
+			return nil, errors.New(fmt.Sprintf("msiplaced character %s in objecct list", currentChar))
+		}
+		index++
+	}
+
+	if currentMap != nil {
+		arrayMaps = append(arrayMaps, currentMap)
+	}
+
+	return arrayMaps, nil
 }
 
 func checkKeyWord(value string) string {

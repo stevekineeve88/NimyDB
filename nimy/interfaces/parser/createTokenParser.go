@@ -30,9 +30,9 @@ func (p *CreateTokenParser) Parse() error {
 	}
 	actionUponToken := p.statementParser.Tokens[0]
 	maxArgsMap := map[string]int{
-		constants.TokenDB:     1,
-		constants.TokenBlob:   3,
-		constants.TokenRecord: 2,
+		constants.TokenDB:      1,
+		constants.TokenBlob:    3,
+		constants.TokenRecords: 2,
 	}
 	maxArgs, ok := maxArgsMap[actionUponToken]
 	if ok && len(args) > maxArgs {
@@ -43,7 +43,7 @@ func (p *CreateTokenParser) Parse() error {
 		return p.runCreateDB(args)
 	case constants.TokenBlob:
 		return p.runCreateBlob(args)
-	case constants.TokenRecord:
+	case constants.TokenRecords:
 		return p.runCreateRecord(args)
 	default:
 		return errors.New(fmt.Sprintf("invalid token after %s: %s", constants.TokenCreate, p.statementParser.Tokens[0]))
@@ -96,14 +96,25 @@ func (p *CreateTokenParser) runCreateRecord(args []string) error {
 	if len(blobParts) != 2 {
 		return errors.New(fmt.Sprintf("could not parse blob %s", blobLocation))
 	}
-	if 1 >= len(args) || args[1] != constants.TokenObjectObj {
+	if 1 >= len(args) {
 		return errors.New(fmt.Sprintf("missing object directly after %s", blobLocation))
 	}
-	record := p.statementParser.Objects[constants.TokenObjectObj].(map[string]string)
+
+	var records []map[string]string
+	switch args[1] {
+	case constants.TokenObjectObj:
+		record := p.statementParser.Objects[constants.TokenObjectObj].(map[string]string)
+		records = append(records, record)
+	case constants.TokenObjectsObj:
+		records = p.statementParser.Objects[constants.TokenObjectsObj].([]map[string]string)
+	default:
+		return errors.New(fmt.Sprintf("unknown token after blob: %s", args[1]))
+	}
+
 	if p.rootTokenParser.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
-		_, err := p.rootTokenParser.partitionStore.AddRecords(blobParts[0], blobParts[1], []map[string]string{record})
+		_, err := p.rootTokenParser.partitionStore.AddRecords(blobParts[0], blobParts[1], records)
 		return err
 	}
-	_, err := p.rootTokenParser.blobStore.AddRecords(blobParts[0], blobParts[1], []map[string]string{record})
+	_, err := p.rootTokenParser.blobStore.AddRecords(blobParts[0], blobParts[1], records)
 	return err
 }

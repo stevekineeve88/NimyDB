@@ -29,9 +29,9 @@ func (p *DeleteTokenParser) Parse() error {
 	}
 	actionUponToken := p.statementParser.Tokens[0]
 	maxArgsMap := map[string]int{
-		constants.TokenDB:     1,
-		constants.TokenBlob:   1,
-		constants.TokenRecord: 2,
+		constants.TokenDB:      1,
+		constants.TokenBlob:    1,
+		constants.TokenRecords: 2,
 	}
 	maxArgs, ok := maxArgsMap[actionUponToken]
 	if ok && len(args) > maxArgs {
@@ -42,7 +42,7 @@ func (p *DeleteTokenParser) Parse() error {
 		return p.runDeleteDB(args)
 	case constants.TokenBlob:
 		return p.runDeleteBlob(args)
-	case constants.TokenRecord:
+	case constants.TokenRecords:
 		return p.runDeleteRecord(args)
 	default:
 		return errors.New(fmt.Sprintf("invalid token after %s: %s", constants.TokenDelete, p.statementParser.Tokens[0]))
@@ -84,8 +84,5 @@ func (p *DeleteTokenParser) runDeleteRecord(args []string) error {
 		return errors.New("missing object id after blob")
 	}
 	recordId := p.statementParser.Objects[constants.TokenObjectIDObj].(string)
-	if !p.rootTokenParser.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
-		return p.rootTokenParser.blobStore.DeleteRecord(blobParts[0], blobParts[1], recordId)
-	}
-	return nil
+	return p.rootTokenParser.blobStore.DeleteRecord(blobParts[0], blobParts[1], recordId)
 }
