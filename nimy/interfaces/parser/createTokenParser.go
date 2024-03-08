@@ -78,6 +78,9 @@ func (p *CreateTokenParser) runCreateBlob(args []string) error {
 		_, err := p.rootTokenParser.blobStore.CreateBlob(blobParts[0], blobParts[1], format)
 		return err
 	}
+	if args[2] != constants.TokenPartitionObj {
+		return errors.New(fmt.Sprintf("unknown object after format"))
+	}
 	partition := p.statementParser.Objects[constants.TokenPartitionObj].(objects.Partition)
 	_, err := p.rootTokenParser.partitionStore.CreatePartition(blobParts[0], blobParts[1], format, partition)
 	return err

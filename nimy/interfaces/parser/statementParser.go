@@ -3,9 +3,12 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/objects"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type StatementParser struct {
@@ -28,6 +31,8 @@ func ParseStatement(statement string) (StatementParser, error) {
 			currentToken = ""
 		case "[":
 			fallthrough
+		case "(":
+			fallthrough
 		case "{":
 			_, ok := tokenObjects[currentToken]
 			if ok {
@@ -36,6 +41,7 @@ func ParseStatement(statement string) (StatementParser, error) {
 			eoeMap := map[string]string{
 				"{": "}",
 				"[": "]",
+				"(": ")",
 			}
 			index++
 			newIndex, element, hitEnd := parseElement(index, statement, eoeMap[currentChar])
@@ -93,6 +99,9 @@ func parseObject(objectType string, element string) (interface{}, error) {
 		return objects.Partition{Keys: partitionArray}, nil
 	case constants.TokenObjectObj:
 		return parseMap(element)
+	case constants.TokenObjectIDObj:
+		_, err := uuid.Parse(element)
+		return element, err
 	default:
 		return nil, errors.New(fmt.Sprintf("object type %s does not exist", objectType))
 	}
@@ -125,7 +134,7 @@ func parseMap(element string) (map[string]string, error) {
 			if currentKey == "" || currentToken == "" {
 				return nil, errors.New("key and value not set properly")
 			}
-			parsedMap[currentKey] = strings.TrimSpace(currentToken)
+			parsedMap[currentKey] = checkKeyWord(strings.TrimSpace(currentToken))
 			currentKey = ""
 			currentToken = ""
 			parsingValue = false
@@ -137,7 +146,7 @@ func parseMap(element string) (map[string]string, error) {
 	if currentKey == "" || currentToken == "" {
 		return nil, errors.New("key and value not set properly")
 	}
-	parsedMap[currentKey] = strings.TrimSpace(currentToken)
+	parsedMap[currentKey] = checkKeyWord(strings.TrimSpace(currentToken))
 	return parsedMap, nil
 }
 
@@ -167,6 +176,15 @@ func parseArray(element string) ([]string, error) {
 	}
 	arrayElements = append(arrayElements, currentToken)
 	return arrayElements, nil
+}
+
+func checkKeyWord(value string) string {
+	switch value {
+	case "TODAY":
+		return strconv.FormatInt(time.Now().Unix(), 10)
+	default:
+		return value
+	}
 }
 
 func buildFormat(formatMap map[string]string) objects.Format {

@@ -11,4 +11,5 @@ const (
 	TokenFormatObj    = "FORMAT"
 	TokenPartitionObj = "PARTITION"
 	TokenObjectObj    = "OBJECT"
+	TokenObjectIDObj  = "OBJECT_ID"
 )
