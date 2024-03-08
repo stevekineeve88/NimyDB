@@ -3,8 +3,8 @@ package parser
 import (
 	"errors"
 	"fmt"
-	"nimy/constants"
 	"nimy/interfaces/store"
+	"nimy/parser/constants"
 )
 
 type RootTokenParser struct {

@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"nimy/interfaces/disk"
-	"nimy/interfaces/parser"
 	"nimy/interfaces/store"
+	"nimy/parser"
 	"os"
 	"strings"
 )

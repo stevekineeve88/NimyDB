@@ -3,7 +3,7 @@ package parser
 import (
 	"errors"
 	"fmt"
-	"nimy/constants"
+	"nimy/parser/constants"
 	"strings"
 )
 

@@ -3,8 +3,8 @@ package parser
 import (
 	"errors"
 	"fmt"
-	"nimy/constants"
 	"nimy/interfaces/objects"
+	"nimy/parser/constants"
 	"strings"
 )
 
