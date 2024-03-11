@@ -3,11 +3,14 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"nimy/interfaces/disk"
 	"nimy/interfaces/store"
 	"nimy/parser"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -21,10 +24,7 @@ func main() {
 	dbStore := store.CreateDBStore(dbDisk)
 
 	//Initialize parser
-	rootParser := parser.RootTokenParser{}
-	rootParser.AddDBStore(dbStore)
-	rootParser.AddBlobStore(blobStore)
-	rootParser.AddPartitionStore(partitionStore)
+	rootParser := parser.CreateQueryAnalyser(dbStore, blobStore, partitionStore)
 
 	fmt.Println("---WELCOME TO NimyDB-----")
 
@@ -33,15 +33,19 @@ func main() {
 		if input == "DONE" {
 			break
 		}
-		statementParser, err := parser.ParseStatement(input)
-		if err != nil {
-			fmt.Println(err.Error())
-			continue
-		}
-		rootParser.AddStatementParser(statementParser)
-		if err = rootParser.Parse(); err != nil {
-			fmt.Println(err.Error())
-		}
+		rootParser.Query(parser.QueryParams{
+			Action: "CREATE",
+			On:     "BLOB",
+			Name:   "app.test",
+			With: map[string]any{
+				"FORMAT": map[string]string{
+					"full_name": "string",
+				},
+				"PARTITION": []string{
+					"full_name",
+				},
+			},
+		})
 	}
 }
 
@@ -51,4 +55,49 @@ func getInput(prompt string) string {
 	text, _ := reader.ReadString('\n')
 	text = strings.TrimSpace(text)
 	return text
+}
+
+func buildMassPartitionQuery() parser.QueryParams {
+	currentYear, _ := strconv.Atoi(getInput("Enter start year: "))
+	endYear, _ := strconv.Atoi(getInput("Enter end year: "))
+
+	category := []string{
+		"A",
+		"B",
+		"C",
+		"D",
+		"E",
+		"F",
+	}
+	comments := []string{
+		"N/A",
+		"A good day today",
+		"A bad day today",
+	}
+
+	var records []map[string]any
+	for currentYear <= endYear {
+		currentDate := time.Date(currentYear, 01, 01, 0, 0, 0, 0, time.Local)
+		endDate := time.Date(currentYear, 12, 31, 0, 0, 0, 0, time.Local)
+		for endDate.After(currentDate) {
+			for _, value := range category {
+				records = append(records, map[string]any{
+					"category": value,
+					"log_date": currentDate.Unix(),
+					"comments": comments[rand.Intn(len(comments))],
+					"rank":     rand.Intn(10),
+				})
+			}
+			currentDate = currentDate.Add(time.Hour * 24)
+		}
+		currentYear++
+	}
+	return parser.QueryParams{
+		Action: "CREATE",
+		On:     "RECORDS",
+		Name:   "app.user_logs",
+		With: map[string]any{
+			"RECORDS": records,
+		},
+	}
 }

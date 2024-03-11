@@ -10,7 +10,7 @@ const (
 
 	TokenFormatObj    = "FORMAT"
 	TokenPartitionObj = "PARTITION"
-	TokenObjectObj    = "OBJECT"
-	TokenObjectsObj   = "OBJECTS"
-	TokenObjectIDObj  = "OBJECT_ID"
+	TokenRecordObj    = "RECORD"
+	TokenRecordsObj   = "RECORDS"
+	TokenRecordIDObj  = "RECORD_ID"
 )

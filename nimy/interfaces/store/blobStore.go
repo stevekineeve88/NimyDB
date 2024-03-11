@@ -12,7 +12,7 @@ import (
 type BlobStore interface {
 	CreateBlob(db string, blob string, format objects.Format) (objects.Blob, error)
 	DeleteBlob(db string, blob string) error
-	AddRecords(db string, blob string, insertRecords []map[string]string) (string, error)
+	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
 	GetRecordByIndex(db string, blob string, recordId string) (map[string]any, error)
 	GetRecordFullScan(db string, blob string, recordId string) (map[string]any, error)
 	DeleteRecord(db string, blob string, recordId string) error
@@ -47,7 +47,7 @@ func (bs blobStore) DeleteBlob(db string, blob string) error {
 	return bs.blobDiskManager.DeleteBlob(db, blob)
 }
 
-func (bs blobStore) AddRecords(db string, blob string, insertRecords []map[string]string) (string, error) {
+func (bs blobStore) AddRecords(db string, blob string, insertRecords []map[string]any) (string, error) {
 	format, err := bs.blobDiskManager.GetFormat(db, blob)
 	if err != nil {
 		return "", err

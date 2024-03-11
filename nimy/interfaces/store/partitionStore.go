@@ -10,7 +10,7 @@ import (
 
 type PartitionStore interface {
 	CreatePartition(db string, blob string, format objects.Format, partition objects.Partition) (objects.Blob, error)
-	AddRecords(db string, blob string, insertRecords []map[string]string) (string, error)
+	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
 	GetRecordsByPartition(db string, blob string, searchPartition map[string]any) (map[string]map[string]any, error)
 	IsPartition(db string, blob string) bool
 }
@@ -43,7 +43,7 @@ func (ps partitionStore) CreatePartition(db string, blob string, format objects.
 	return blobObj, ps.partitionDiskManager.CreatePartition(db, blob, format, partition)
 }
 
-func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[string]string) (string, error) {
+func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[string]any) (string, error) {
 	format, err := ps.blobDiskManager.GetFormat(db, blob)
 	if err != nil {
 		return "", err
