@@ -16,9 +16,6 @@ const (
 	BlobRegex     = "^[a-z_]*$"
 	BlobRegexDesc = "snake case"
 
-	BoolValTrue  = "1"
-	BoolValFalse = "0"
-
 	MaxPageSize       = 1024 * 10
 	MaxIndexSize      = 5024
 	IndexPrefixLength = 2
@@ -38,13 +35,6 @@ func GetFormatTypes() []string {
 		DateTime,
 		Date,
 		Float,
-	}
-}
-
-func GetAcceptedBoolValues() []string {
-	return []string{
-		BoolValTrue,
-		BoolValFalse,
 	}
 }
 

@@ -88,7 +88,7 @@ func (b blobObj) FormatRecord(record map[string]any) (map[string]any, error) {
 		if !ok {
 			return nil, errors.New(fmt.Sprintf("key %s does not exist in %s", key, b.name))
 		}
-		newValue, err := b.convertRecordValue(value.(string), formatItem)
+		newValue, err := b.convertRecordValue(value, formatItem)
 		if err != nil {
 			return nil, errors.New(fmt.Sprintf("error on key %s: %s", key, err.Error()))
 		}
@@ -108,40 +108,56 @@ func (b blobObj) checkFormatItem(key string, formatItem FormatItem) error {
 	return nil
 }
 
-func (b blobObj) convertRecordValue(value string, formatItem FormatItem) (any, error) {
+func (b blobObj) convertRecordValue(value any, formatItem FormatItem) (any, error) {
 	switch formatItem.KeyType {
 	case constants.String:
-		return value, nil
+		converted, ok := value.(string)
+		if !ok {
+			return nil, errors.New(fmt.Sprintf("%+v could not be converted to string", value))
+		}
+		return converted, nil
 	case constants.Int:
-		intConv, err := strconv.Atoi(value)
-		if err != nil {
-			return nil, err
+		converted, ok := value.(int)
+		if !ok {
+			return nil, errors.New(fmt.Sprintf("%+v could not be converted to int", value))
 		}
-		return intConv, nil
+		return converted, nil
 	case constants.Float:
-		floatConv, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return nil, err
+		converted, ok := value.(float64)
+		if !ok {
+			return nil, errors.New(fmt.Sprintf("%+v could not be converted to float", value))
 		}
-		return floatConv, nil
+		return converted, nil
 	case constants.Bool:
-		if !slices.Contains(constants.GetAcceptedBoolValues(), value) {
-			return nil, errors.New(fmt.Sprintf("%s is not an accepted boolean value", value))
+		converted, ok := value.(bool)
+		if !ok {
+			return nil, errors.New(fmt.Sprintf("%+v could not convert to bool", value))
 		}
-		return value == constants.BoolValTrue, nil
-	case constants.DateTime:
-		intConv, err := strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		return time.Unix(intConv, 0), nil
+		return converted, nil
 	case constants.Date:
-		intConv, err := strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return nil, err
+		fallthrough
+	case constants.DateTime:
+		var timeValue time.Time
+		switch value.(type) {
+		case float64:
+			timeValue = time.Unix(int64(value.(float64)), 0)
+		case string:
+			intConv, err := strconv.ParseInt(value.(string), 10, 64)
+			if err != nil {
+				return nil, errors.New(fmt.Sprintf("%+v could not be converted to int (UNIX FORMAT)", value))
+			}
+			timeValue = time.Unix(intConv, 0)
+		case int64:
+			timeValue = time.Unix(value.(int64), 0)
+		case int:
+			timeValue = time.Unix(int64(value.(int)), 0)
+		default:
+			return nil, errors.New(fmt.Sprintf("%+v cannot be converted to int", value))
 		}
-		timeConv := time.Unix(intConv, 0)
-		return timeConv.Format(time.DateOnly), nil
+		if formatItem.KeyType == constants.Date {
+			return timeValue.Format(time.DateOnly), nil
+		}
+		return timeValue, nil
 	}
 	return nil, errors.New("type not handled")
 }

@@ -2,10 +2,9 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"math/rand"
-	"nimy/interfaces/disk"
-	"nimy/interfaces/store"
 	"nimy/parser"
 	"os"
 	"strconv"
@@ -15,16 +14,7 @@ import (
 
 func main() {
 	dataLocation := "C:\\nimy-data"
-	//Initialize disk managers and stores
-	dbDisk := disk.CreateDBDiskManager(dataLocation)
-	blobDisk := disk.CreateBlobDiskManager(dataLocation)
-	partitionDisk := disk.CreatePartitionDiskManager(dataLocation, blobDisk)
-	blobStore := store.CreateBlobStore(blobDisk)
-	partitionStore := store.CreatePartitionStore(partitionDisk, blobDisk, blobStore)
-	dbStore := store.CreateDBStore(dbDisk)
-
-	//Initialize parser
-	rootParser := parser.CreateQueryAnalyser(dbStore, blobStore, partitionStore)
+	queryAnalyzer := parser.CreateQueryAnalyser(dataLocation)
 
 	fmt.Println("---WELCOME TO NimyDB-----")
 
@@ -33,19 +23,20 @@ func main() {
 		if input == "DONE" {
 			break
 		}
-		rootParser.Query(parser.QueryParams{
-			Action: "CREATE",
-			On:     "BLOB",
-			Name:   "app.test",
-			With: map[string]any{
-				"FORMAT": map[string]string{
-					"full_name": "string",
-				},
-				"PARTITION": []string{
-					"full_name",
-				},
-			},
-		})
+		queryParams := parser.QueryParams{}
+		if input == "SIMULATE MASS PARTITION" {
+			queryParams = buildMassPartitionQuery()
+		} else {
+			err := json.Unmarshal([]byte(input), &queryParams)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
+		}
+		err := queryAnalyzer.Query(queryParams)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
 	}
 }
 
@@ -95,9 +86,9 @@ func buildMassPartitionQuery() parser.QueryParams {
 	return parser.QueryParams{
 		Action: "CREATE",
 		On:     "RECORDS",
-		Name:   "app.user_logs",
-		With: map[string]any{
-			"RECORDS": records,
+		Name:   "app.user_logs_quant",
+		With: parser.With{
+			Records: records,
 		},
 	}
 }

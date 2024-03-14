@@ -3,6 +3,8 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
+	"nimy/interfaces/disk"
 	"nimy/interfaces/objects"
 	"nimy/interfaces/store"
 	"nimy/parser/constants"
@@ -10,17 +12,18 @@ import (
 )
 
 type QueryParams struct {
-	Action string         `json:"action"`
-	On     string         `json:"on"`
-	Name   string         `json:"name"`
-	With   map[string]any `json:"with"`
+	Action string `json:"action,required"`
+	On     string `json:"on,required"`
+	Name   string `json:"name,required"`
+	With   With   `json:"with"`
 }
 
-type WithDistinguished struct {
-	MapStringString   map[string]map[string]string
-	ArrayString       map[string][]string
-	ArrayMapStringAny map[string][]map[string]any
-	MapStringAny      map[string]map[string]any
+type With struct {
+	Format    map[string]string `json:"FORMAT,omitempty"`
+	Partition []string          `json:"PARTITION,omitempty"`
+	Record    map[string]any    `json:"RECORD,omitempty"`
+	Records   []map[string]any  `json:"RECORDS,omitempty"`
+	RecordId  string            `json:"RECORD_ID,omitempty"`
 }
 
 type QueryAnalyser struct {
@@ -29,7 +32,15 @@ type QueryAnalyser struct {
 	partitionStore store.PartitionStore
 }
 
-func CreateQueryAnalyser(dbStore store.DBStore, blobStore store.BlobStore, partitionStore store.PartitionStore) QueryAnalyser {
+func CreateQueryAnalyser(dataLocation string) QueryAnalyser {
+	dbDisk := disk.CreateDBDiskManager(dataLocation)
+	blobDisk := disk.CreateBlobDiskManager(dataLocation)
+	partitionDisk := disk.CreatePartitionDiskManager(dataLocation, blobDisk)
+
+	blobStore := store.CreateBlobStore(blobDisk)
+	partitionStore := store.CreatePartitionStore(partitionDisk, blobDisk, blobStore)
+	dbStore := store.CreateDBStore(dbDisk)
+
 	return QueryAnalyser{
 		dbStore:        dbStore,
 		blobStore:      blobStore,
@@ -42,7 +53,7 @@ func (qa *QueryAnalyser) Query(queryParams QueryParams) error {
 	case constants.TokenCreate:
 		return qa.createActions(queryParams)
 	case constants.TokenDelete:
-		fallthrough
+		return qa.deleteActions(queryParams)
 	default:
 		return nil
 	}
@@ -58,55 +69,61 @@ func (qa *QueryAnalyser) createActions(queryParams QueryParams) error {
 		if len(blobParts) != 2 {
 			return errors.New("'name' property must match db.blob format")
 		}
-		withDistinguished, err := qa.convert(queryParams.With)
-		if err != nil {
+		if queryParams.With.Format == nil {
+			return errors.New(fmt.Sprintf("'With' is missing %s data", constants.TokenFormatObj))
+		}
+		if queryParams.With.Partition == nil {
+			_, err := qa.blobStore.CreateBlob(blobParts[0], blobParts[1], qa.buildFormat(queryParams.With.Format))
 			return err
 		}
-		formatMap, ok := withDistinguished.MapStringString[constants.TokenFormatObj]
-		if !ok {
-			return errors.New(fmt.Sprintf("'with' is missing %s data", constants.TokenFormatObj))
-		}
-		partitionArray, ok := withDistinguished.ArrayString[constants.TokenPartitionObj]
-		if !ok {
-			_, err = qa.blobStore.CreateBlob(blobParts[0], blobParts[1], qa.buildFormat(formatMap))
-			return err
-		}
-		_, err = qa.partitionStore.CreatePartition(blobParts[0], blobParts[1], qa.buildFormat(formatMap), qa.buildPartition(partitionArray))
+		_, err := qa.partitionStore.CreatePartition(blobParts[0], blobParts[1], qa.buildFormat(queryParams.With.Format), qa.buildPartition(queryParams.With.Partition))
 		return err
 	case constants.TokenRecords:
 		blobParts := strings.Split(queryParams.Name, ".")
 		if len(blobParts) != 2 {
 			return errors.New("'name' property must match db.blob format")
 		}
-		withDistinguished, err := qa.convert(queryParams.With)
-		if err != nil {
-			return err
-		}
-		records, ok := withDistinguished.ArrayMapStringAny[constants.TokenRecordsObj]
-		if !ok {
-			record, ok := withDistinguished.MapStringAny[constants.TokenRecordObj]
-			if !ok {
-				return errors.New(fmt.Sprintf("%s or %s not present in with argument", constants.TokenRecordsObj, constants.TokenRecordObj))
+		var records []map[string]any
+		if queryParams.With.Records == nil {
+			if queryParams.With.Record == nil {
+				return errors.New(fmt.Sprintf("%s or %s not present in 'with' argument", constants.TokenRecordsObj, constants.TokenRecordObj))
 			}
-			records = []map[string]any{record}
+			records = []map[string]any{queryParams.With.Record}
+		} else {
+			records = queryParams.With.Records
 		}
 		if qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
-			_, err = qa.partitionStore.AddRecords(blobParts[0], blobParts[1], records)
+			_, err := qa.partitionStore.AddRecords(blobParts[0], blobParts[1], records)
 			return err
 		}
-		_, err = qa.blobStore.AddRecords(blobParts[0], blobParts[1], records)
+		_, err := qa.blobStore.AddRecords(blobParts[0], blobParts[1], records)
 		return err
 	default:
-		return nil
+		return errors.New(fmt.Sprintf("'on' parameter %s not applicable With action", queryParams.On))
 	}
 }
 
-func (qa *QueryAnalyser) deleteActions(queryParams QueryParams) {
+func (qa *QueryAnalyser) deleteActions(queryParams QueryParams) error {
 	switch queryParams.On {
 	case constants.TokenDB:
+		return qa.dbStore.DeleteDB(queryParams.Name)
 	case constants.TokenBlob:
+		blobParts := strings.Split(queryParams.Name, ".")
+		if len(blobParts) != 2 {
+			return errors.New("'name' property must match db.blob format")
+		}
+		return qa.blobStore.DeleteBlob(blobParts[0], blobParts[1])
 	case constants.TokenRecords:
+		blobParts := strings.Split(queryParams.Name, ".")
+		if len(blobParts) != 2 {
+			return errors.New("'name' property must match db.blob format")
+		}
+		if err := qa.checkRecordId(queryParams.With.RecordId); err != nil {
+			return errors.New(fmt.Sprintf("error on %s: %s", constants.TokenRecordIDObj, err.Error()))
+		}
+		return qa.blobStore.DeleteRecord(blobParts[0], blobParts[1], queryParams.With.RecordId)
 	default:
+		return errors.New(fmt.Sprintf("'on' parameter %s not applicable With action", queryParams.On))
 	}
 }
 
@@ -122,40 +139,7 @@ func (qa *QueryAnalyser) buildPartition(partitionArray []string) objects.Partiti
 	return objects.Partition{Keys: partitionArray}
 }
 
-func (qa *QueryAnalyser) convert(with map[string]any) (WithDistinguished, error) {
-	withDistinguished := WithDistinguished{
-		MapStringString:   make(map[string]map[string]string),
-		ArrayString:       make(map[string][]string),
-		ArrayMapStringAny: make(map[string][]map[string]any),
-		MapStringAny:      make(map[string]map[string]any),
-	}
-	for key, data := range with {
-		switch key {
-		case constants.TokenRecordObj:
-			converted, ok := data.(map[string]any)
-			if !ok {
-				return WithDistinguished{}, errors.New(fmt.Sprintf("could not convert %s to map[string]any", key))
-			}
-			withDistinguished.MapStringAny[key] = converted
-		case constants.TokenRecordsObj:
-			converted, ok := data.([]map[string]any)
-			if !ok {
-				return WithDistinguished{}, errors.New(fmt.Sprintf("could not convert %s to []map[string]any", key))
-			}
-			withDistinguished.ArrayMapStringAny[key] = converted
-		case constants.TokenFormatObj:
-			converted, ok := data.(map[string]string)
-			if !ok {
-				return WithDistinguished{}, errors.New(fmt.Sprintf("could not convert %s to map[string]string", key))
-			}
-			withDistinguished.MapStringString[key] = converted
-		case constants.TokenPartitionObj:
-			converted, ok := data.([]string)
-			if !ok {
-				return WithDistinguished{}, errors.New(fmt.Sprintf("could not convert %s to []string", key))
-			}
-			withDistinguished.ArrayString[key] = converted
-		}
-	}
-	return withDistinguished, nil
+func (qa *QueryAnalyser) checkRecordId(recordId string) error {
+	_, err := uuid.Parse(recordId)
+	return err
 }
