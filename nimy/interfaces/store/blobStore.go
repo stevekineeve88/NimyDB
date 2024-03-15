@@ -14,7 +14,7 @@ type BlobStore interface {
 	DeleteBlob(db string, blob string) error
 	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
 	GetRecordByIndex(db string, blob string, recordId string) (map[string]any, error)
-	GetRecordFullScan(db string, blob string, recordId string) (map[string]any, error)
+	GetRecordFullScan(db string, blob string, filter objects.Filter) (map[string]map[string]any, error)
 	DeleteRecord(db string, blob string, recordId string) error
 	AddIndexes(db string, blob string, indexMap map[string]string) error
 }
@@ -72,7 +72,7 @@ func (bs blobStore) AddRecords(db string, blob string, insertRecords []map[strin
 		lastRecordId = uuid.New().String()
 		recordMap[lastRecordId] = newInsertRecord
 		indexMap[lastRecordId] = currentLastPage.FileName
-		if len(recordMap) > constants.MaxPageSize/len(format.GetMap()) {
+		if len(recordMap) > constants.MaxPageSize {
 			err = bs.blobDiskManager.WritePageData(db, blob, currentLastPage.FileName, recordMap)
 			if err != nil {
 				return lastRecordId, err
@@ -122,22 +122,28 @@ func (bs blobStore) GetRecordByIndex(db string, blob string, recordId string) (m
 	return nil, errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
 }
 
-func (bs blobStore) GetRecordFullScan(db string, blob string, recordId string) (map[string]any, error) {
+func (bs blobStore) GetRecordFullScan(db string, blob string, filter objects.Filter) (map[string]map[string]any, error) {
 	pageItems, err := bs.blobDiskManager.GetPageItems(db, blob)
 	if err != nil {
 		return nil, err
 	}
+	format, err := bs.blobDiskManager.GetFormat(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	total := make(map[string]map[string]any)
 	for _, pageItem := range pageItems {
 		recordMap, err := bs.blobDiskManager.GetPageData(db, blob, pageItem.FileName)
 		if err != nil {
 			return nil, err
 		}
-		record, ok := recordMap[recordId]
-		if ok {
-			return record, nil
+		for key, record := range recordMap {
+			if passes, _ := filter.Passes(record, format); passes {
+				total[key] = record
+			}
 		}
 	}
-	return nil, errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
+	return total, nil
 }
 
 func (bs blobStore) DeleteRecord(db string, blob string, recordId string) error {

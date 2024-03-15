@@ -1,12 +1,7 @@
 package objects
 
-type Format interface {
-	AddItem(key string, mapItem FormatItem) bool
-	GetMap() map[string]FormatItem
-}
-
-type format struct {
-	formatMap map[string]FormatItem
+type Format struct {
+	FormatMap map[string]FormatItem `json:"format_map,required"`
 }
 
 type FormatItem struct {
@@ -17,19 +12,19 @@ func CreateFormat(formatMap map[string]FormatItem) Format {
 	if formatMap == nil {
 		formatMap = make(map[string]FormatItem)
 	}
-	return format{
-		formatMap: formatMap,
+	return Format{
+		FormatMap: formatMap,
 	}
 }
 
-func (f format) AddItem(key string, formatItem FormatItem) bool {
-	if _, ok := f.formatMap[key]; ok {
+func (f *Format) AddItem(key string, formatItem FormatItem) bool {
+	if _, ok := f.FormatMap[key]; ok {
 		return false
 	}
-	f.formatMap[key] = formatItem
+	f.FormatMap[key] = formatItem
 	return true
 }
 
-func (f format) GetMap() map[string]FormatItem {
-	return f.formatMap
+func (f *Format) GetMap() map[string]FormatItem {
+	return f.FormatMap
 }

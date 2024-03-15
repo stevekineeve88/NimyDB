@@ -1,16 +1,17 @@
 package constants
 
 const (
-	TokenCreate = "CREATE"
-	TokenDelete = "DELETE"
+	ActionCreate = "CREATE"
+	ActionDelete = "DELETE"
+	ActionGet    = "GET"
 
-	TokenDB      = "DB"
-	TokenBlob    = "BLOB"
-	TokenRecords = "RECORDS"
+	OnDB      = "DB"
+	OnBlob    = "BLOB"
+	OnRecords = "RECORDS"
 
-	TokenFormatObj    = "FORMAT"
-	TokenPartitionObj = "PARTITION"
-	TokenRecordObj    = "RECORD"
-	TokenRecordsObj   = "RECORDS"
-	TokenRecordIDObj  = "RECORD_ID"
+	WithFormat    = "FORMAT"
+	WithPartition = "PARTITION"
+	WithRecord    = "RECORD"
+	WithRecords   = "RECORDS"
+	WithRecordId  = "RECORD_ID"
 )

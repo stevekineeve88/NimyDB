@@ -33,9 +33,12 @@ func main() {
 				continue
 			}
 		}
-		err := queryAnalyzer.Query(queryParams)
-		if err != nil {
-			fmt.Println(err.Error())
+		result := queryAnalyzer.Query(queryParams)
+		if result.Error {
+			fmt.Println(result.ErrorMessage)
+		} else {
+			data, _ := json.MarshalIndent(result, "", " ")
+			fmt.Println(string(data))
 		}
 	}
 }

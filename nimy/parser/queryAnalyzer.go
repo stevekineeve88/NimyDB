@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"nimy/interfaces/disk"
@@ -19,17 +18,29 @@ type QueryParams struct {
 }
 
 type With struct {
-	Format    map[string]string `json:"FORMAT,omitempty"`
-	Partition []string          `json:"PARTITION,omitempty"`
-	Record    map[string]any    `json:"RECORD,omitempty"`
-	Records   []map[string]any  `json:"RECORDS,omitempty"`
-	RecordId  string            `json:"RECORD_ID,omitempty"`
+	Format          map[string]string    `json:"FORMAT,omitempty"`
+	Partition       []string             `json:"PARTITION,omitempty"`
+	Record          map[string]any       `json:"RECORD,omitempty"`
+	Records         []map[string]any     `json:"RECORDS,omitempty"`
+	RecordId        string               `json:"RECORD_ID,omitempty"`
+	PartitionSearch map[string]any       `json:"PARTITION_SEARCH,omitempty"`
+	Filter          []objects.FilterItem `json:"FILTER,omitempty"`
 }
 
 type QueryAnalyser struct {
 	dbStore        store.DBStore
 	blobStore      store.BlobStore
 	partitionStore store.PartitionStore
+}
+
+type QueryResult struct {
+	Records      map[string]map[string]any `json:"records,omitempty"`
+	SearchSize   int                       `json:"search_size,omitempty"`
+	Blob         objects.Blob              `json:"blob,omitempty"`
+	DB           objects.DB                `json:"db,omitempty"`
+	LastInsertId string                    `json:"last_insert_id,omitempty"`
+	Error        bool                      `json:"error,required"`
+	ErrorMessage string                    `json:"error_message,omitempty"`
 }
 
 func CreateQueryAnalyser(dataLocation string) QueryAnalyser {
@@ -48,82 +59,142 @@ func CreateQueryAnalyser(dataLocation string) QueryAnalyser {
 	}
 }
 
-func (qa *QueryAnalyser) Query(queryParams QueryParams) error {
+func (qa *QueryAnalyser) Query(queryParams QueryParams) QueryResult {
 	switch queryParams.Action {
-	case constants.TokenCreate:
+	case constants.ActionCreate:
 		return qa.createActions(queryParams)
-	case constants.TokenDelete:
+	case constants.ActionDelete:
 		return qa.deleteActions(queryParams)
+	case constants.ActionGet:
+		return qa.getActions(queryParams)
 	default:
-		return nil
+		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'action' parameter %s not applicable", queryParams.On)}
 	}
 }
 
-func (qa *QueryAnalyser) createActions(queryParams QueryParams) error {
+func (qa *QueryAnalyser) createActions(queryParams QueryParams) QueryResult {
 	switch queryParams.On {
-	case constants.TokenDB:
-		_, err := qa.dbStore.CreateDB(queryParams.Name)
-		return err
-	case constants.TokenBlob:
+	case constants.OnDB:
+		db, err := qa.dbStore.CreateDB(queryParams.Name)
+		if err != nil {
+			return QueryResult{Error: true, ErrorMessage: err.Error()}
+		}
+		return QueryResult{DB: db, Error: false}
+	case constants.OnBlob:
 		blobParts := strings.Split(queryParams.Name, ".")
 		if len(blobParts) != 2 {
-			return errors.New("'name' property must match db.blob format")
+			return QueryResult{Error: true, ErrorMessage: "'name' property must match db.blob format"}
 		}
 		if queryParams.With.Format == nil {
-			return errors.New(fmt.Sprintf("'With' is missing %s data", constants.TokenFormatObj))
+			return QueryResult{Error: true, ErrorMessage: "'with' is missing FORMAT data"}
 		}
 		if queryParams.With.Partition == nil {
-			_, err := qa.blobStore.CreateBlob(blobParts[0], blobParts[1], qa.buildFormat(queryParams.With.Format))
-			return err
+			blob, err := qa.blobStore.CreateBlob(blobParts[0], blobParts[1], qa.buildFormat(queryParams.With.Format))
+			if err != nil {
+				return QueryResult{Error: true, ErrorMessage: err.Error()}
+			}
+			return QueryResult{Blob: blob, Error: false}
 		}
-		_, err := qa.partitionStore.CreatePartition(blobParts[0], blobParts[1], qa.buildFormat(queryParams.With.Format), qa.buildPartition(queryParams.With.Partition))
-		return err
-	case constants.TokenRecords:
+		blob, err := qa.partitionStore.CreatePartition(blobParts[0], blobParts[1], qa.buildFormat(queryParams.With.Format), qa.buildPartition(queryParams.With.Partition))
+		if err != nil {
+			return QueryResult{Error: true, ErrorMessage: err.Error()}
+		}
+		return QueryResult{Blob: blob, Error: false}
+	case constants.OnRecords:
 		blobParts := strings.Split(queryParams.Name, ".")
 		if len(blobParts) != 2 {
-			return errors.New("'name' property must match db.blob format")
+			return QueryResult{Error: true, ErrorMessage: "'name' property must match db.blob format"}
 		}
 		var records []map[string]any
 		if queryParams.With.Records == nil {
 			if queryParams.With.Record == nil {
-				return errors.New(fmt.Sprintf("%s or %s not present in 'with' argument", constants.TokenRecordsObj, constants.TokenRecordObj))
+				return QueryResult{Error: true, ErrorMessage: "RECORDS or RECORD not present in 'with' argument"}
 			}
 			records = []map[string]any{queryParams.With.Record}
 		} else {
 			records = queryParams.With.Records
 		}
 		if qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
-			_, err := qa.partitionStore.AddRecords(blobParts[0], blobParts[1], records)
-			return err
+			lastInsertId, err := qa.partitionStore.AddRecords(blobParts[0], blobParts[1], records)
+			if err != nil {
+				return QueryResult{Error: true, ErrorMessage: err.Error()}
+			}
+			return QueryResult{LastInsertId: lastInsertId, Error: false}
 		}
-		_, err := qa.blobStore.AddRecords(blobParts[0], blobParts[1], records)
-		return err
+		lastInsertId, err := qa.blobStore.AddRecords(blobParts[0], blobParts[1], records)
+		if err != nil {
+			return QueryResult{Error: true, ErrorMessage: err.Error()}
+		}
+		return QueryResult{LastInsertId: lastInsertId, Error: false}
 	default:
-		return errors.New(fmt.Sprintf("'on' parameter %s not applicable With action", queryParams.On))
+		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'on' parameter %s not applicable with action", queryParams.On)}
 	}
 }
 
-func (qa *QueryAnalyser) deleteActions(queryParams QueryParams) error {
+func (qa *QueryAnalyser) deleteActions(queryParams QueryParams) QueryResult {
 	switch queryParams.On {
-	case constants.TokenDB:
-		return qa.dbStore.DeleteDB(queryParams.Name)
-	case constants.TokenBlob:
-		blobParts := strings.Split(queryParams.Name, ".")
-		if len(blobParts) != 2 {
-			return errors.New("'name' property must match db.blob format")
+	case constants.OnDB:
+		err := qa.dbStore.DeleteDB(queryParams.Name)
+		if err != nil {
+			return QueryResult{Error: true, ErrorMessage: err.Error()}
 		}
-		return qa.blobStore.DeleteBlob(blobParts[0], blobParts[1])
-	case constants.TokenRecords:
+		return QueryResult{Error: false}
+	case constants.OnBlob:
 		blobParts := strings.Split(queryParams.Name, ".")
 		if len(blobParts) != 2 {
-			return errors.New("'name' property must match db.blob format")
+			return QueryResult{Error: true, ErrorMessage: "'name' property must match db.blob format"}
+		}
+		err := qa.blobStore.DeleteBlob(blobParts[0], blobParts[1])
+		if err != nil {
+			return QueryResult{Error: true, ErrorMessage: err.Error()}
+		}
+		return QueryResult{Error: false}
+	case constants.OnRecords:
+		blobParts := strings.Split(queryParams.Name, ".")
+		if len(blobParts) != 2 {
+			return QueryResult{Error: true, ErrorMessage: "'name' property must match db.blob format"}
 		}
 		if err := qa.checkRecordId(queryParams.With.RecordId); err != nil {
-			return errors.New(fmt.Sprintf("error on %s: %s", constants.TokenRecordIDObj, err.Error()))
+			return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("error on RECORD_ID: %s", err.Error())}
 		}
-		return qa.blobStore.DeleteRecord(blobParts[0], blobParts[1], queryParams.With.RecordId)
+		err := qa.blobStore.DeleteRecord(blobParts[0], blobParts[1], queryParams.With.RecordId)
+		if err != nil {
+			return QueryResult{Error: true, ErrorMessage: err.Error()}
+		}
+		return QueryResult{Error: false}
 	default:
-		return errors.New(fmt.Sprintf("'on' parameter %s not applicable With action", queryParams.On))
+		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'on' parameter %s not applicable with action", queryParams.On)}
+	}
+}
+
+func (qa *QueryAnalyser) getActions(queryParams QueryParams) QueryResult {
+	switch queryParams.On {
+	case constants.OnRecords:
+		blobParts := strings.Split(queryParams.Name, ".")
+		if len(blobParts) != 2 {
+			return QueryResult{Error: true, ErrorMessage: "'name' property must match db.blob format"}
+		}
+		if queryParams.With.PartitionSearch != nil {
+			records, err := qa.partitionStore.GetRecordsByPartition(blobParts[0], blobParts[1], queryParams.With.PartitionSearch, objects.Filter{FilterItems: queryParams.With.Filter})
+			if err != nil {
+				return QueryResult{Error: true, ErrorMessage: err.Error()}
+			}
+			return QueryResult{Records: records, SearchSize: len(records), Error: false}
+		}
+		if err := qa.checkRecordId(queryParams.With.RecordId); err == nil {
+			record, err := qa.blobStore.GetRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId)
+			if err != nil {
+				return QueryResult{Error: true, ErrorMessage: err.Error()}
+			}
+			return QueryResult{Records: map[string]map[string]any{queryParams.With.RecordId: record}, SearchSize: 1, Error: false}
+		}
+		records, err := qa.blobStore.GetRecordFullScan(blobParts[0], blobParts[1], objects.Filter{FilterItems: queryParams.With.Filter})
+		if err != nil {
+			return QueryResult{Error: true, ErrorMessage: err.Error()}
+		}
+		return QueryResult{Records: records, SearchSize: len(records), Error: false}
+	default:
+		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'on' parameter %s not applicable with action", queryParams.On)}
 	}
 }
 

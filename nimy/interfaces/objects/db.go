@@ -7,27 +7,23 @@ import (
 	"regexp"
 )
 
-type DB interface {
-	HasDBNameConvention() error
-}
-
-type dbObj struct {
-	name string
+type DB struct {
+	Name string `json:"name,required"`
 }
 
 func CreateDB(db string) DB {
-	return dbObj{
-		name: db,
+	return DB{
+		Name: db,
 	}
 }
 
-func (d dbObj) HasDBNameConvention() error {
-	if len(d.name) > constants.KeyMaxLength {
-		return errors.New(fmt.Sprintf("name length on %s exceeds %d", d.name, constants.DBMaxLength))
+func (d *DB) HasDBNameConvention() error {
+	if len(d.Name) > constants.KeyMaxLength {
+		return errors.New(fmt.Sprintf("Name length on %s exceeds %d", d.Name, constants.DBMaxLength))
 	}
-	match, _ := regexp.MatchString(constants.DBRegex, d.name)
+	match, _ := regexp.MatchString(constants.DBRegex, d.Name)
 	if !match {
-		return errors.New(fmt.Sprintf("name %s does not match %s", d.name, constants.DBRegexDesc))
+		return errors.New(fmt.Sprintf("Name %s does not match %s", d.Name, constants.DBRegexDesc))
 	}
 	return nil
 }

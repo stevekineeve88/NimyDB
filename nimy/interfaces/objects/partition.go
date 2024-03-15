@@ -8,7 +8,7 @@ import (
 )
 
 type Partition struct {
-	Keys []string `json:"keys"`
+	Keys []string `json:"keys,required"`
 }
 
 type PartitionItem struct {
@@ -30,9 +30,9 @@ func (p Partition) GetPartitionHashKey(record map[string]any) (string, error) {
 func (p Partition) GetPartitionHashKeyItem(partitionKey string, record map[string]any) (string, error) {
 	recordItem, ok := record[partitionKey]
 	if !ok {
-		return "", errors.New(fmt.Sprintf("partition key %s not found in record", partitionKey))
+		return "", errors.New(fmt.Sprintf("Partition key %s not found in record", partitionKey))
 	}
-	hasher := sha1.New()
-	hasher.Write([]byte(fmt.Sprintf("%+v", recordItem)))
-	return base64.URLEncoding.EncodeToString(hasher.Sum(nil)), nil
+	hash := sha1.New()
+	hash.Write([]byte(fmt.Sprintf("%+v", recordItem)))
+	return base64.URLEncoding.EncodeToString(hash.Sum(nil)), nil
 }

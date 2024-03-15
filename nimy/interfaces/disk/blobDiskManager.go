@@ -166,11 +166,11 @@ func (bdm blobDiskManager) GetFormat(db string, blob string) (objects.Format, er
 	var formatItems map[string]objects.FormatItem
 	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", bdm.dataLocation, db, blob, constants.FormatFile))
 	if err != nil {
-		return nil, err
+		return objects.Format{}, err
 	}
 	err = json.Unmarshal(file, &formatItems)
 	if err != nil {
-		return nil, err
+		return objects.Format{}, err
 	}
 	return objects.CreateFormat(formatItems), nil
 }

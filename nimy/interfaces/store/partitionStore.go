@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/disk"
@@ -11,7 +12,7 @@ import (
 type PartitionStore interface {
 	CreatePartition(db string, blob string, format objects.Format, partition objects.Partition) (objects.Blob, error)
 	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
-	GetRecordsByPartition(db string, blob string, searchPartition map[string]any) (map[string]map[string]any, error)
+	GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filter objects.Filter) (map[string]map[string]any, error)
 	IsPartition(db string, blob string) bool
 }
 
@@ -81,7 +82,7 @@ func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[
 	return lastRecordId, nil
 }
 
-func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPartition map[string]any) (map[string]map[string]any, error) {
+func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filter objects.Filter) (map[string]map[string]any, error) {
 	partitionHashKeyFileNames, err := ps.partitionDiskManager.GetPartitionHashKeyItemFileNames(db, blob)
 	if err != nil {
 		return nil, err
@@ -94,6 +95,11 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 	if err != nil {
 		return nil, err
 	}
+	format, err := ps.blobDiskManager.GetFormat(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println(filter)
 	recordMap := make(map[string]map[string]any)
 	for _, partitionHashKeyFileName := range partitionHashKeyFileNames {
 		hashKey := strings.Split(partitionHashKeyFileName, ".json")[0]
@@ -107,7 +113,9 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 				return recordMap, err
 			}
 			for k, v := range currentRecordMap {
-				recordMap[k] = v
+				if passes, _ := filter.Passes(v, format); passes {
+					recordMap[k] = v
+				}
 			}
 		}
 	}
@@ -144,7 +152,7 @@ func (ps partitionStore) addPartitionedRecords(db string, blob string, hashKey s
 		lastRecordId = uuid.New().String()
 		recordMap[lastRecordId] = insertRecord
 		indexMap[lastRecordId] = currentPageFile
-		if len(recordMap) > constants.MaxPageSize/len(insertRecord) {
+		if len(recordMap) > constants.MaxPageSize {
 			err = ps.blobDiskManager.WritePageData(db, blob, currentPageFile, recordMap)
 			if err != nil {
 				return lastRecordId, err
