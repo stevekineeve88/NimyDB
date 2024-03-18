@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"nimy/constants"
+	"nimy/interfaces/util"
 	"regexp"
 	"slices"
-	"strconv"
 	"time"
 )
 
@@ -109,17 +109,9 @@ func (b *Blob) convertRecordValue(value any, formatItem FormatItem) (any, error)
 		}
 		return converted, nil
 	case constants.Int:
-		converted, ok := value.(int)
-		if !ok {
-			return nil, errors.New(fmt.Sprintf("%+v could not be converted to int", value))
-		}
-		return converted, nil
+		return util.ConvertToInt(value)
 	case constants.Float:
-		converted, ok := value.(float64)
-		if !ok {
-			return nil, errors.New(fmt.Sprintf("%+v could not be converted to float", value))
-		}
-		return converted, nil
+		return util.ConvertToFloat64(value)
 	case constants.Bool:
 		converted, ok := value.(bool)
 		if !ok {
@@ -129,23 +121,11 @@ func (b *Blob) convertRecordValue(value any, formatItem FormatItem) (any, error)
 	case constants.Date:
 		fallthrough
 	case constants.DateTime:
-		var timeValue time.Time
-		switch value.(type) {
-		case float64:
-			timeValue = time.Unix(int64(value.(float64)), 0)
-		case string:
-			intConv, err := strconv.ParseInt(value.(string), 10, 64)
-			if err != nil {
-				return nil, errors.New(fmt.Sprintf("%+v could not be converted to int (UNIX FORMAT)", value))
-			}
-			timeValue = time.Unix(intConv, 0)
-		case int64:
-			timeValue = time.Unix(value.(int64), 0)
-		case int:
-			timeValue = time.Unix(int64(value.(int)), 0)
-		default:
-			return nil, errors.New(fmt.Sprintf("%+v cannot be converted to int", value))
+		timeValueInt, err := util.ConvertToInt(value)
+		if err != nil {
+			return nil, err
 		}
+		timeValue := time.Unix(int64(timeValueInt), 0)
 		if formatItem.KeyType == constants.Date {
 			return timeValue.Format(time.DateOnly), nil
 		} else {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"nimy/constants"
+	"nimy/interfaces/util"
 	"strings"
 	"time"
 )
@@ -31,25 +32,55 @@ func (f *Filter) Passes(record map[string]any, format Format) (bool, error) {
 		result := true
 		switch formatMap[filterItem.Key].KeyType {
 		case constants.String:
-			result = f.checkString(filterItem.Value, value.(string), filterItem.Op)
-		case constants.Int:
-			//??? No idea why this is needed, but it is
-			value, ok = value.(float64)
-			if ok {
-				value = int(value.(float64))
-			} else {
-				value, ok = value.(int)
-				if !ok {
-					return false, nil
-				}
+			compare, ok := filterItem.Value.(string)
+			if !ok {
+				return false, errors.New(fmt.Sprintf("%+v could not be converted to string", filterItem.Value))
 			}
-			result = f.checkInt(filterItem.Value, value.(int), filterItem.Op)
+			_, ok = value.(string)
+			if !ok {
+				return false, errors.New(fmt.Sprintf("record is corrupt value %+v", value))
+			}
+			result = f.checkString(compare, value.(string), filterItem.Op)
+		case constants.Int:
+			value, err := util.ConvertToInt(value)
+			if err != nil {
+				return false, errors.New(fmt.Sprintf("corrupt record with value %+v: %s", value, err.Error()))
+			}
+			compare, err := util.ConvertToInt(value)
+			if err != nil {
+				return false, errors.New(fmt.Sprintf("could not convert %+v to int in filter", compare))
+			}
+			result = f.checkInt(compare, value, filterItem.Op)
 		case constants.Float:
-			result = f.checkFloat(filterItem.Value, value.(float64), filterItem.Op)
+			value, err := util.ConvertToFloat64(value)
+			if err != nil {
+				return false, errors.New(fmt.Sprintf("corrupt record with value %+v: %s", value, err.Error()))
+			}
+			compare, err := util.ConvertToFloat64(filterItem.Value)
+			if err != nil {
+				return false, errors.New(fmt.Sprintf("could not convert %+v to int in filter", compare))
+			}
+			result = f.checkFloat(compare, value, filterItem.Op)
 		case constants.Date:
-			result = f.checkDate(filterItem.Value, value.(string), filterItem.Op)
+			compare, ok := filterItem.Value.(string)
+			if !ok {
+				return false, errors.New(fmt.Sprintf("%+v could not be converted to string", filterItem.Value))
+			}
+			_, ok = value.(string)
+			if !ok {
+				return false, errors.New(fmt.Sprintf("record is corrupt value %+v", value))
+			}
+			result = f.checkDate(compare, value.(string), filterItem.Op)
 		case constants.DateTime:
-			result = f.checkDateTime(filterItem.Value, value.(string), filterItem.Op)
+			_, ok = value.(string)
+			if !ok {
+				return false, errors.New(fmt.Sprintf("record is corrupt value %+v", value))
+			}
+			compare, err := util.ConvertToInt(filterItem.Value)
+			if err != nil {
+				return false, errors.New(fmt.Sprintf("could not convert %+v to int in filter", compare))
+			}
+			result = f.checkDateTime(int64(compare), value.(string), filterItem.Op)
 		default:
 			return false, errors.New(fmt.Sprintf("format type %s not known in filter", formatMap[filterItem.Key].KeyType))
 		}
@@ -61,79 +92,57 @@ func (f *Filter) Passes(record map[string]any, format Format) (bool, error) {
 	return true, nil
 }
 
-func (f *Filter) checkString(compare any, value string, op string) bool {
-	filterValue, ok := compare.(string)
-	if !ok {
-		return false
-	}
+func (f *Filter) checkString(compare string, value string, op string) bool {
 	switch op {
 	case "CONTAINS":
-		return strings.Contains(strings.ToLower(value), strings.ToLower(filterValue))
+		return strings.Contains(strings.ToLower(value), strings.ToLower(compare))
 	case "PREFIX":
-		return strings.HasPrefix(strings.ToLower(value), strings.ToLower(filterValue))
+		return strings.HasPrefix(strings.ToLower(value), strings.ToLower(compare))
 	case "SUFFIX":
-		return strings.HasSuffix(strings.ToLower(value), strings.ToLower(filterValue))
+		return strings.HasSuffix(strings.ToLower(value), strings.ToLower(compare))
 	case "=":
-		return strings.ToLower(value) == strings.ToLower(filterValue)
+		return strings.ToLower(value) == strings.ToLower(compare)
 	default:
 		return false
 	}
 }
 
-func (f *Filter) checkInt(compare any, value int, op string) bool {
-	//??? No idea why this is needed, but it is
-	compare, ok := compare.(float64)
-	if ok {
-		compare = int(compare.(float64))
-	} else {
-		compare, ok = compare.(int)
-		if !ok {
-			return false
-		}
-	}
+func (f *Filter) checkInt(compare int, value int, op string) bool {
 	switch op {
 	case "=":
-		return compare.(int) == value
+		return compare == value
 	case ">":
-		return value > compare.(int)
+		return value > compare
 	case ">=":
-		return value >= compare.(int)
+		return value >= compare
 	case "<":
-		return value < compare.(int)
+		return value < compare
 	case "<=":
-		return value <= compare.(int)
+		return value <= compare
 	default:
 		return false
 	}
 }
 
-func (f *Filter) checkFloat(compare any, value float64, op string) bool {
-	filterValue, ok := compare.(float64)
-	if !ok {
-		return false
-	}
+func (f *Filter) checkFloat(compare float64, value float64, op string) bool {
 	switch op {
 	case "=":
-		return filterValue == value
+		return compare == value
 	case ">":
-		return value > filterValue
+		return value > compare
 	case ">=":
-		return value >= filterValue
+		return value >= compare
 	case "<":
-		return value < filterValue
+		return value < compare
 	case "<=":
-		return value <= filterValue
+		return value <= compare
 	default:
 		return false
 	}
 }
 
-func (f *Filter) checkDate(compare any, value string, op string) bool {
-	filterValue, ok := compare.(string)
-	if !ok {
-		return false
-	}
-	filterValueDate, err := time.Parse("2006-01-02", filterValue)
+func (f *Filter) checkDate(compare string, value string, op string) bool {
+	filterValueDate, err := time.Parse("2006-01-02", compare)
 	if err != nil {
 		return false
 	}
@@ -157,12 +166,8 @@ func (f *Filter) checkDate(compare any, value string, op string) bool {
 	}
 }
 
-func (f *Filter) checkDateTime(compare any, value string, op string) bool {
-	filterValue, ok := compare.(int64)
-	if !ok {
-		return false
-	}
-	filterValueDateTime := time.Unix(filterValue, 0)
+func (f *Filter) checkDateTime(compare int64, value string, op string) bool {
+	filterValueDateTime := time.Unix(compare, 0)
 	valueDateTime, err := time.Parse(time.DateTime, value)
 	if err != nil {
 		return false

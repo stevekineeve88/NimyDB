@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/disk"
@@ -99,7 +98,6 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(filter)
 	recordMap := make(map[string]map[string]any)
 	for _, partitionHashKeyFileName := range partitionHashKeyFileNames {
 		hashKey := strings.Split(partitionHashKeyFileName, ".json")[0]
