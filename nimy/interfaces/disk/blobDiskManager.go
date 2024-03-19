@@ -92,7 +92,7 @@ func (bdm blobDiskManager) CreatePage(db string, blob string) (objects.PageItem,
 	}
 	blobDirectory := fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob)
 	pageItem.FileName = fmt.Sprintf("%s/%s.json", constants.PagesDir, uuid.New().String())
-	pageData, _ := json.MarshalIndent(make(map[string]interface{}), "", " ")
+	pageData, _ := json.Marshal(make(map[string]interface{}))
 	err = bdm.CreateFile(blobDirectory, pageData, pageItem.FileName)
 	if err != nil {
 		return pageItem, err
@@ -121,7 +121,7 @@ func (bdm blobDiskManager) CreateIndexPage(db string, blob string, prefix string
 		prefixIndexItem = tempPrefixIndexItem
 	}
 	indexFileName := fmt.Sprintf("%s/%s.json", constants.IndexesDir, uuid.New().String())
-	indexMap, _ := json.MarshalIndent(make(map[string]string), "", " ")
+	indexMap, _ := json.Marshal(make(map[string]string))
 	err = bdm.CreateFile(blobDirectory, indexMap, indexFileName)
 	if err != nil {
 		return prefixIndexItem, err
@@ -140,12 +140,12 @@ func (bdm blobDiskManager) CreateIndexPage(db string, blob string, prefix string
 }
 
 func (bdm blobDiskManager) CreateFormatFile(db string, blob string, format objects.Format) error {
-	formatData, _ := json.MarshalIndent(format.GetMap(), "", " ")
+	formatData, _ := json.Marshal(format.GetMap())
 	return bdm.CreateFile(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob), formatData, constants.FormatFile)
 }
 
 func (bdm blobDiskManager) CreatePagesFileAndDir(db string, blob string) error {
-	pageData, _ := json.MarshalIndent(make([]objects.PageItem, 0), "", " ")
+	pageData, _ := json.Marshal(make([]objects.PageItem, 0))
 	err := bdm.CreateFile(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob), pageData, constants.PagesFile)
 	if err != nil {
 		return err
@@ -154,7 +154,7 @@ func (bdm blobDiskManager) CreatePagesFileAndDir(db string, blob string) error {
 }
 
 func (bdm blobDiskManager) CreateIndexesFileAndDir(db string, blob string) error {
-	indexData, _ := json.MarshalIndent(make(map[string]objects.PrefixIndexItem), "", " ")
+	indexData, _ := json.Marshal(make(map[string]objects.PrefixIndexItem))
 	err := bdm.CreateFile(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob), indexData, constants.IndexesFile)
 	if err != nil {
 		return err
@@ -218,13 +218,13 @@ func (bdm blobDiskManager) GetIndexData(db string, blob string, fileName string)
 
 func (bdm blobDiskManager) WritePageData(db string, blob string, fileName string, records map[string]map[string]any) error {
 	directoryName := fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob)
-	recordData, _ := json.MarshalIndent(records, "", " ")
+	recordData, _ := json.Marshal(records)
 	return bdm.WriteFile(directoryName, recordData, fileName)
 }
 
 func (bdm blobDiskManager) WriteIndexData(db string, blob string, fileName string, records map[string]string) error {
 	directoryName := fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob)
-	recordData, _ := json.MarshalIndent(records, "", " ")
+	recordData, _ := json.Marshal(records)
 	return bdm.WriteFile(directoryName, recordData, fileName)
 }
 
@@ -297,12 +297,12 @@ func (bdm blobDiskManager) DeleteIndexFile(db string, blob string, dFileName str
 }
 
 func (bdm blobDiskManager) WritePagesFile(directoryName string, pageItems []objects.PageItem) error {
-	pagesData, _ := json.MarshalIndent(pageItems, "", " ")
+	pagesData, _ := json.Marshal(pageItems)
 	return bdm.WriteFile(directoryName, pagesData, constants.PagesFile)
 }
 
 func (bdm blobDiskManager) WriteIndexPagesFile(directoryName string, indexItems map[string]objects.PrefixIndexItem) error {
-	indexData, _ := json.MarshalIndent(indexItems, "", " ")
+	indexData, _ := json.Marshal(indexItems)
 	return bdm.WriteFile(directoryName, indexData, constants.IndexesFile)
 }
 

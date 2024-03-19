@@ -16,8 +16,8 @@ const (
 	BlobRegex     = "^[a-z_]*$"
 	BlobRegexDesc = "snake case"
 
-	MaxPageSize       = 1024 * 10
-	MaxIndexSize      = 5024
+	MaxPageSize       = 1024 * 50
+	MaxIndexSize      = 5024 * 100
 	IndexPrefixLength = 2
 
 	PagesFile   = "pages.json"

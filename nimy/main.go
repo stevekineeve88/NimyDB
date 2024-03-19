@@ -33,12 +33,13 @@ func main() {
 				continue
 			}
 		}
+		startTime := time.Now()
 		result := queryAnalyzer.Query(queryParams)
+		fmt.Printf("query time: %f\n", time.Now().Sub(startTime).Seconds())
 		if result.Error {
 			fmt.Println(result.ErrorMessage)
 		} else {
-			data, _ := json.MarshalIndent(result, "", " ")
-			fmt.Println(string(data))
+			fmt.Printf("search size: %d\n", result.SearchSize)
 		}
 	}
 }

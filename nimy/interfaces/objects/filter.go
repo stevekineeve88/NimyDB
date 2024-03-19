@@ -46,7 +46,7 @@ func (f *Filter) Passes(record map[string]any, format Format) (bool, error) {
 			if err != nil {
 				return false, errors.New(fmt.Sprintf("corrupt record with value %+v: %s", value, err.Error()))
 			}
-			compare, err := util.ConvertToInt(value)
+			compare, err := util.ConvertToInt(filterItem.Value)
 			if err != nil {
 				return false, errors.New(fmt.Sprintf("could not convert %+v to int in filter", compare))
 			}

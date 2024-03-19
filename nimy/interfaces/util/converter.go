@@ -15,6 +15,8 @@ func ConvertToInt(value any) (int, error) {
 		return int(value.(float64)), nil
 	case string:
 		return strconv.Atoi(value.(string))
+	case int64:
+		return int(value.(int64)), nil
 	default:
 		return -1, errors.New(fmt.Sprintf("cannot convert %+v of type %t to int", value, reflect.TypeOf(value)))
 	}
@@ -28,6 +30,8 @@ func ConvertToFloat64(value any) (float64, error) {
 		return value.(float64), nil
 	case string:
 		return strconv.ParseFloat(value.(string), 64)
+	case int64:
+		return float64(value.(int64)), nil
 	default:
 		return -1, errors.New(fmt.Sprintf("cannot convert %+v of type %t to float", value, reflect.TypeOf(value)))
 	}

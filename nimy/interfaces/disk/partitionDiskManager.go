@@ -63,7 +63,7 @@ func (pdm partitionDiskManager) CreatePartition(db string, blob string, format o
 }
 
 func (pdm partitionDiskManager) CreatePartitionsFileAndDir(db string, blob string, partition objects.Partition) error {
-	partitionData, _ := json.MarshalIndent(partition, "", " ")
+	partitionData, _ := json.Marshal(partition)
 	err := pdm.blobDiskManager.CreateFile(fmt.Sprintf("%s/%s/%s", pdm.dataLocation, db, blob), partitionData, constants.PartitionsFile)
 	if err != nil {
 		return err
@@ -72,7 +72,7 @@ func (pdm partitionDiskManager) CreatePartitionsFileAndDir(db string, blob strin
 }
 
 func (pdm partitionDiskManager) CreatePartitionHashKeyItem(db string, blob string, hashKey string) error {
-	partitionHashKeyItemsData, _ := json.MarshalIndent(objects.PartitionItem{FileNames: []string{}}, "", " ")
+	partitionHashKeyItemsData, _ := json.Marshal(objects.PartitionItem{FileNames: []string{}})
 	return pdm.blobDiskManager.CreateFile(fmt.Sprintf("%s/%s/%s/%s", pdm.dataLocation, db, blob, constants.PartitionsDir), partitionHashKeyItemsData, hashKey+".json")
 }
 
@@ -92,7 +92,7 @@ func (pdm partitionDiskManager) CreatePartitionHashKeyFile(db string, blob strin
 	partitionItem.FileNames = append(partitionItem.FileNames, partitionFileName)
 	pagesItems = append(pagesItems, objects.PageItem{FileName: partitionFileName})
 
-	pageData, _ := json.MarshalIndent(make(map[string]interface{}), "", " ")
+	pageData, _ := json.Marshal(make(map[string]interface{}))
 	err = pdm.blobDiskManager.CreateFile(blobDirectory, pageData, partitionFileName)
 	if err != nil {
 		return partitionItem, err
@@ -143,6 +143,6 @@ func (pdm partitionDiskManager) GetPartitionHashKeyItemFileNames(db string, blob
 }
 
 func (pdm partitionDiskManager) WritePartitionHashKeyItem(directoryName string, hashKey string, partitionItem objects.PartitionItem) error {
-	partitionItemData, _ := json.MarshalIndent(partitionItem, "", " ")
+	partitionItemData, _ := json.Marshal(partitionItem)
 	return pdm.blobDiskManager.WriteFile(directoryName, partitionItemData, hashKey+".json")
 }
