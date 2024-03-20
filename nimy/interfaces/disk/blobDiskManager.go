@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ type BlobDiskManager interface {
 	GetPageItems(db string, blob string) ([]objects.PageItem, error)
 	GetPrefixIndexItems(db string, blob string) (map[string]objects.PrefixIndexItem, error)
 	GetPageData(db string, blob string, fileName string) (map[string]map[string]any, error)
+	OpenPage(db string, blob string, fileName string) (*os.File, error)
 	GetIndexData(db string, blob string, fileName string) (map[string]string, error)
 	GetFormat(db string, blob string) (objects.Format, error)
 	WritePageData(db string, blob string, fileName string, records map[string]map[string]any) error
@@ -206,6 +208,10 @@ func (bdm blobDiskManager) GetPageData(db string, blob string, fileName string) 
 	return pageData, err
 }
 
+func (bdm blobDiskManager) OpenPage(db string, blob string, fileName string) (*os.File, error) {
+	return os.Open(fmt.Sprintf("%s/%s/%s/%s", bdm.dataLocation, db, blob, fileName))
+}
+
 func (bdm blobDiskManager) GetIndexData(db string, blob string, fileName string) (map[string]string, error) {
 	var indexData map[string]string
 	file, err := os.ReadFile(fmt.Sprintf("%s/%s/%s/%s", bdm.dataLocation, db, blob, fileName))
@@ -217,9 +223,22 @@ func (bdm blobDiskManager) GetIndexData(db string, blob string, fileName string)
 }
 
 func (bdm blobDiskManager) WritePageData(db string, blob string, fileName string, records map[string]map[string]any) error {
+	var buffer bytes.Buffer
+	buffer.WriteString("{\n")
 	directoryName := fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob)
-	recordData, _ := json.Marshal(records)
-	return bdm.WriteFile(directoryName, recordData, fileName)
+	size := len(records)
+	i := 1
+	for key, record := range records {
+		buffer.WriteString(fmt.Sprintf("\"%s\": ", key))
+		body, _ := json.Marshal(record)
+		buffer.Write(body)
+		if i < size {
+			buffer.WriteString(",\n")
+			i++
+		}
+	}
+	buffer.WriteString("\n}")
+	return bdm.WriteFile(directoryName, buffer.Bytes(), fileName)
 }
 
 func (bdm blobDiskManager) WriteIndexData(db string, blob string, fileName string, records map[string]string) error {

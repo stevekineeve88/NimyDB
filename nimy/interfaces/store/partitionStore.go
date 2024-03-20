@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bufio"
+	"encoding/json"
 	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/disk"
@@ -106,15 +108,26 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 			return recordMap, err
 		}
 		for _, pageFile := range partitionItem.FileNames {
-			currentRecordMap, err := ps.blobDiskManager.GetPageData(db, blob, pageFile)
+			file, err := ps.blobDiskManager.OpenPage(db, blob, pageFile)
 			if err != nil {
-				return recordMap, err
+				return nil, err
 			}
-			for k, v := range currentRecordMap {
-				if passes, _ := filter.Passes(v, format); passes {
-					recordMap[k] = v
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				lineItems := strings.SplitN(scanner.Text(), ":", 2)
+				if len(lineItems) != 2 {
+					continue
+				}
+				lineItems[1] = strings.TrimSuffix(lineItems[1], ",")
+				var key string
+				var record map[string]any
+				_ = json.Unmarshal([]byte(lineItems[0]), &key)
+				_ = json.Unmarshal([]byte(lineItems[1]), &record)
+				if passes, _ := filter.Passes(record, format); passes {
+					recordMap[key] = record
 				}
 			}
+			_ = file.Close()
 		}
 	}
 	return recordMap, nil

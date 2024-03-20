@@ -1,12 +1,15 @@
 package store
 
 import (
+	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/disk"
 	"nimy/interfaces/objects"
+	"strings"
 )
 
 type BlobStore interface {
@@ -133,15 +136,26 @@ func (bs blobStore) GetRecordFullScan(db string, blob string, filter objects.Fil
 	}
 	total := make(map[string]map[string]any)
 	for _, pageItem := range pageItems {
-		recordMap, err := bs.blobDiskManager.GetPageData(db, blob, pageItem.FileName)
+		file, err := bs.blobDiskManager.OpenPage(db, blob, pageItem.FileName)
 		if err != nil {
 			return nil, err
 		}
-		for key, record := range recordMap {
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			lineItems := strings.SplitN(scanner.Text(), ":", 2)
+			if len(lineItems) != 2 {
+				continue
+			}
+			lineItems[1] = strings.TrimSuffix(lineItems[1], ",")
+			var key string
+			var record map[string]any
+			_ = json.Unmarshal([]byte(lineItems[0]), &key)
+			_ = json.Unmarshal([]byte(lineItems[1]), &record)
 			if passes, _ := filter.Passes(record, format); passes {
 				total[key] = record
 			}
 		}
+		_ = file.Close()
 	}
 	return total, nil
 }
