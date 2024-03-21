@@ -1,15 +1,13 @@
 package store
 
 import (
-	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/disk"
 	"nimy/interfaces/objects"
-	"strings"
+	"sync"
 )
 
 type BlobStore interface {
@@ -20,6 +18,7 @@ type BlobStore interface {
 	GetRecordFullScan(db string, blob string, filter objects.Filter) (map[string]map[string]any, error)
 	DeleteRecord(db string, blob string, recordId string) error
 	AddIndexes(db string, blob string, indexMap map[string]string) error
+	SearchPage(db string, blob string, fileName string, filter objects.Filter, format objects.Format, groups *[constants.SearchThreadCount]map[string]map[string]any, wg *sync.WaitGroup, index int)
 }
 
 type blobStore struct {
@@ -134,28 +133,24 @@ func (bs blobStore) GetRecordFullScan(db string, blob string, filter objects.Fil
 	if err != nil {
 		return nil, err
 	}
+	var wg sync.WaitGroup
 	total := make(map[string]map[string]any)
-	for _, pageItem := range pageItems {
-		file, err := bs.blobDiskManager.OpenPage(db, blob, pageItem.FileName)
-		if err != nil {
-			return nil, err
+	for i := 0; i < len(pageItems); i += constants.SearchThreadCount {
+		var groups [constants.SearchThreadCount]map[string]map[string]any
+		threadItem := i
+		threadCount := 0
+		for threadItem < len(pageItems) && threadCount < constants.SearchThreadCount {
+			wg.Add(1)
+			go bs.SearchPage(db, blob, pageItems[threadItem].FileName, filter, format, &groups, &wg, threadCount)
+			threadItem++
+			threadCount++
 		}
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			lineItems := strings.SplitN(scanner.Text(), ":", 2)
-			if len(lineItems) != 2 {
-				continue
-			}
-			lineItems[1] = strings.TrimSuffix(lineItems[1], ",")
-			var key string
-			var record map[string]any
-			_ = json.Unmarshal([]byte(lineItems[0]), &key)
-			_ = json.Unmarshal([]byte(lineItems[1]), &record)
-			if passes, _ := filter.Passes(record, format); passes {
+		wg.Wait()
+		for _, groupItem := range groups {
+			for key, record := range groupItem {
 				total[key] = record
 			}
 		}
-		_ = file.Close()
 	}
 	return total, nil
 }
@@ -255,4 +250,19 @@ func (bs blobStore) AddIndexes(db string, blob string, indexMap map[string]strin
 		}
 	}
 	return nil
+}
+
+func (bs blobStore) SearchPage(db string, blob string, fileName string, filter objects.Filter, format objects.Format, groups *[constants.SearchThreadCount]map[string]map[string]any, wg *sync.WaitGroup, index int) {
+	defer wg.Done()
+	groupItem := make(map[string]map[string]any)
+	pageData, err := bs.blobDiskManager.GetPageData(db, blob, fileName)
+	if err != nil {
+		return
+	}
+	for key, record := range pageData {
+		if passes, _ := filter.Passes(record, format); passes {
+			groupItem[key] = record
+		}
+	}
+	groups[index] = groupItem
 }

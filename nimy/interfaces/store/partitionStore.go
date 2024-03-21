@@ -1,13 +1,12 @@
 package store
 
 import (
-	"bufio"
-	"encoding/json"
 	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/disk"
 	"nimy/interfaces/objects"
 	"strings"
+	"sync"
 )
 
 type PartitionStore interface {
@@ -107,27 +106,23 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 		if err != nil {
 			return recordMap, err
 		}
-		for _, pageFile := range partitionItem.FileNames {
-			file, err := ps.blobDiskManager.OpenPage(db, blob, pageFile)
-			if err != nil {
-				return nil, err
+		var wg sync.WaitGroup
+		for i := 0; i < len(partitionItem.FileNames); i += constants.SearchThreadCount {
+			var groups [constants.SearchThreadCount]map[string]map[string]any
+			threadItem := i
+			threadCount := 0
+			for threadItem < len(partitionItem.FileNames) && threadCount < constants.SearchThreadCount {
+				wg.Add(1)
+				go ps.blobStore.SearchPage(db, blob, partitionItem.FileNames[threadItem], filter, format, &groups, &wg, threadCount)
+				threadItem++
+				threadCount++
 			}
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				lineItems := strings.SplitN(scanner.Text(), ":", 2)
-				if len(lineItems) != 2 {
-					continue
-				}
-				lineItems[1] = strings.TrimSuffix(lineItems[1], ",")
-				var key string
-				var record map[string]any
-				_ = json.Unmarshal([]byte(lineItems[0]), &key)
-				_ = json.Unmarshal([]byte(lineItems[1]), &record)
-				if passes, _ := filter.Passes(record, format); passes {
+			wg.Wait()
+			for _, groupItem := range groups {
+				for key, record := range groupItem {
 					recordMap[key] = record
 				}
 			}
-			_ = file.Close()
 		}
 	}
 	return recordMap, nil

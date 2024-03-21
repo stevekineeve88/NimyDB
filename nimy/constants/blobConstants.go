@@ -25,6 +25,8 @@ const (
 	FormatFile  = "format.json"
 	IndexesFile = "indexes.json"
 	IndexesDir  = "indexes"
+
+	SearchThreadCount = 5
 )
 
 func GetFormatTypes() []string {
