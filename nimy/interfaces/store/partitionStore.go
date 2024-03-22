@@ -12,7 +12,7 @@ import (
 type PartitionStore interface {
 	CreatePartition(db string, blob string, format objects.Format, partition objects.Partition) (objects.Blob, error)
 	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
-	GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filter objects.Filter) (map[string]map[string]any, error)
+	GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filter objects.Filter) (map[string]map[string]map[string]any, error)
 	IsPartition(db string, blob string) bool
 }
 
@@ -82,7 +82,7 @@ func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[
 	return lastRecordId, nil
 }
 
-func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filter objects.Filter) (map[string]map[string]any, error) {
+func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filter objects.Filter) (map[string]map[string]map[string]any, error) {
 	partitionHashKeyFileNames, err := ps.partitionDiskManager.GetPartitionHashKeyItemFileNames(db, blob)
 	if err != nil {
 		return nil, err
@@ -99,12 +99,12 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 	if err != nil {
 		return nil, err
 	}
-	recordMap := make(map[string]map[string]any)
+	total := make(map[string]map[string]map[string]any)
 	for _, partitionHashKeyFileName := range partitionHashKeyFileNames {
 		hashKey := strings.Split(partitionHashKeyFileName, ".json")[0]
 		partitionItem, err := ps.partitionDiskManager.GetPartitionHashKeyItem(db, blob, hashKey)
 		if err != nil {
-			return recordMap, err
+			return total, err
 		}
 		var wg sync.WaitGroup
 		for i := 0; i < len(partitionItem.FileNames); i += constants.SearchThreadCount {
@@ -118,14 +118,18 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 				threadCount++
 			}
 			wg.Wait()
+			currentFileIndex := i
 			for _, groupItem := range groups {
-				for key, record := range groupItem {
-					recordMap[key] = record
+				if len(groupItem) == 0 {
+					currentFileIndex++
+					continue
 				}
+				total[partitionItem.FileNames[currentFileIndex]] = groupItem
+				currentFileIndex++
 			}
 		}
 	}
-	return recordMap, nil
+	return total, nil
 }
 
 func (ps partitionStore) IsPartition(db string, blob string) bool {

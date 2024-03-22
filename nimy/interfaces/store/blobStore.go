@@ -14,8 +14,8 @@ type BlobStore interface {
 	CreateBlob(db string, blob string, format objects.Format) (objects.Blob, error)
 	DeleteBlob(db string, blob string) error
 	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
-	GetRecordByIndex(db string, blob string, recordId string) (map[string]any, error)
-	GetRecordFullScan(db string, blob string, filter objects.Filter) (map[string]map[string]any, error)
+	GetRecordByIndex(db string, blob string, recordId string) (map[string]map[string]map[string]any, error)
+	GetRecordFullScan(db string, blob string, filter objects.Filter) (map[string]map[string]map[string]any, error)
 	DeleteRecord(db string, blob string, recordId string) error
 	AddIndexes(db string, blob string, indexMap map[string]string) error
 	SearchPage(db string, blob string, fileName string, filter objects.Filter, format objects.Format, groups *[constants.SearchThreadCount]map[string]map[string]any, wg *sync.WaitGroup, index int)
@@ -94,7 +94,7 @@ func (bs blobStore) AddRecords(db string, blob string, insertRecords []map[strin
 	return lastRecordId, err
 }
 
-func (bs blobStore) GetRecordByIndex(db string, blob string, recordId string) (map[string]any, error) {
+func (bs blobStore) GetRecordByIndex(db string, blob string, recordId string) (map[string]map[string]map[string]any, error) {
 	indexPrefixMap, err := bs.blobDiskManager.GetPrefixIndexItems(db, blob)
 	if err != nil {
 		return nil, err
@@ -118,13 +118,17 @@ func (bs blobStore) GetRecordByIndex(db string, blob string, recordId string) (m
 			if !ok {
 				return nil, err
 			}
-			return record, nil
+			return map[string]map[string]map[string]any{
+				pageFileName: {
+					recordId: record,
+				},
+			}, nil
 		}
 	}
 	return nil, errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
 }
 
-func (bs blobStore) GetRecordFullScan(db string, blob string, filter objects.Filter) (map[string]map[string]any, error) {
+func (bs blobStore) GetRecordFullScan(db string, blob string, filter objects.Filter) (map[string]map[string]map[string]any, error) {
 	pageItems, err := bs.blobDiskManager.GetPageItems(db, blob)
 	if err != nil {
 		return nil, err
@@ -134,7 +138,7 @@ func (bs blobStore) GetRecordFullScan(db string, blob string, filter objects.Fil
 		return nil, err
 	}
 	var wg sync.WaitGroup
-	total := make(map[string]map[string]any)
+	total := make(map[string]map[string]map[string]any)
 	for i := 0; i < len(pageItems); i += constants.SearchThreadCount {
 		var groups [constants.SearchThreadCount]map[string]map[string]any
 		threadItem := i
@@ -146,11 +150,21 @@ func (bs blobStore) GetRecordFullScan(db string, blob string, filter objects.Fil
 			threadCount++
 		}
 		wg.Wait()
+		currentFileIndex := i
+
 		for _, groupItem := range groups {
+			if len(groupItem) == 0 {
+				currentFileIndex++
+				continue
+			}
+			total[pageItems[currentFileIndex].FileName] = groupItem
+			currentFileIndex++
+		}
+		/*for _, groupItem := range groups {
 			for key, record := range groupItem {
 				total[key] = record
 			}
-		}
+		}*/
 	}
 	return total, nil
 }

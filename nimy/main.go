@@ -39,7 +39,9 @@ func main() {
 		if result.Error {
 			fmt.Println(result.ErrorMessage)
 		} else {
-			fmt.Printf("search size: %d\n", result.SearchSize)
+			for key, records := range result.Records {
+				fmt.Printf("File %s, Total Records (%d)\n", key, len(records))
+			}
 		}
 	}
 }
@@ -80,6 +82,7 @@ func buildMassPartitionQuery() parser.QueryParams {
 					"category": value,
 					"log_date": currentDate.Unix(),
 					"comments": comments[rand.Intn(len(comments))],
+					"year":     currentYear,
 					"rank":     rand.Intn(10),
 				})
 			}

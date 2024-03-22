@@ -34,13 +34,12 @@ type QueryAnalyser struct {
 }
 
 type QueryResult struct {
-	Records      map[string]map[string]any `json:"records,omitempty"`
-	SearchSize   int                       `json:"search_size,omitempty"`
-	Blob         objects.Blob              `json:"blob,omitempty"`
-	DB           objects.DB                `json:"db,omitempty"`
-	LastInsertId string                    `json:"last_insert_id,omitempty"`
-	Error        bool                      `json:"error,required"`
-	ErrorMessage string                    `json:"error_message,omitempty"`
+	Records      map[string]map[string]map[string]any `json:"records,omitempty"`
+	Blob         objects.Blob                         `json:"blob,omitempty"`
+	DB           objects.DB                           `json:"db,omitempty"`
+	LastInsertId string                               `json:"last_insert_id,omitempty"`
+	Error        bool                                 `json:"error,required"`
+	ErrorMessage string                               `json:"error_message,omitempty"`
 }
 
 func CreateQueryAnalyser(dataLocation string) QueryAnalyser {
@@ -179,20 +178,20 @@ func (qa *QueryAnalyser) getActions(queryParams QueryParams) QueryResult {
 			if err != nil {
 				return QueryResult{Error: true, ErrorMessage: err.Error()}
 			}
-			return QueryResult{Records: records, SearchSize: len(records), Error: false}
+			return QueryResult{Records: records, Error: false}
 		}
 		if err := qa.checkRecordId(queryParams.With.RecordId); err == nil {
 			record, err := qa.blobStore.GetRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId)
 			if err != nil {
 				return QueryResult{Error: true, ErrorMessage: err.Error()}
 			}
-			return QueryResult{Records: map[string]map[string]any{queryParams.With.RecordId: record}, SearchSize: 1, Error: false}
+			return QueryResult{Records: record, Error: false}
 		}
 		records, err := qa.blobStore.GetRecordFullScan(blobParts[0], blobParts[1], objects.Filter{FilterItems: queryParams.With.Filter})
 		if err != nil {
 			return QueryResult{Error: true, ErrorMessage: err.Error()}
 		}
-		return QueryResult{Records: records, SearchSize: len(records), Error: false}
+		return QueryResult{Records: records, Error: false}
 	default:
 		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'on' parameter %s not applicable with action", queryParams.On)}
 	}
