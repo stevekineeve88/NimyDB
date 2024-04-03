@@ -82,7 +82,6 @@ func buildMassPartitionQuery() parser.QueryParams {
 					"category": value,
 					"log_date": currentDate.Unix(),
 					"comments": comments[rand.Intn(len(comments))],
-					"year":     currentYear,
 					"rank":     rand.Intn(10),
 				})
 			}

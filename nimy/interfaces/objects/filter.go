@@ -10,35 +10,27 @@ import (
 )
 
 type FilterItem struct {
-	Key       string `json:"key,required"`
-	Op        string `json:"op,required"`
-	Value     any    `json:"value,required"`
-	converted bool
+	Key   string `json:"key,required"`
+	Op    string `json:"op,required"`
+	Value any    `json:"value,required"`
 }
 
 type Filter struct {
 	FilterItems []FilterItem
+	Format      Format
+	converted   bool
 }
 
-func (f *Filter) Passes(record map[string]any, format Format) (bool, error) {
+func (f *Filter) Passes(record map[string]any) (bool, error) {
 	if f.FilterItems == nil {
 		return true, nil
 	}
-	formatMap := format.GetMap()
+	formatMap := f.Format.GetMap()
 	i := 0
 	for _, filterItem := range f.FilterItems {
 		value, ok := record[filterItem.Key]
 		if !ok {
 			return false, errors.New(fmt.Sprintf("'%s' not found in record", filterItem.Key))
-		}
-		if !filterItem.converted {
-			fmt.Println("First Conversion...")
-			filterItemValue, err := f.convertCompare(filterItem.Value, formatMap[filterItem.Key].KeyType)
-			if err != nil {
-				return false, err
-			}
-			f.FilterItems[i].Value = filterItemValue
-			f.FilterItems[i].converted = true
 		}
 		result := true
 		switch formatMap[filterItem.Key].KeyType {
@@ -88,33 +80,41 @@ func (f *Filter) Passes(record map[string]any, format Format) (bool, error) {
 	return true, nil
 }
 
-func (*Filter) convertCompare(compare any, valueType string) (any, error) {
-	switch valueType {
-	case constants.Date:
-		fallthrough
-	case constants.String:
-		compare, ok := compare.(string)
-		if !ok {
-			return false, errors.New(fmt.Sprintf("%+v could not be converted to string", compare))
+func (f *Filter) ConvertFilterItems() error {
+	i := 0
+	formatMap := f.Format.GetMap()
+	for _, filterItem := range f.FilterItems {
+		switch formatMap[filterItem.Key].KeyType {
+		case constants.Date:
+			fallthrough
+		case constants.String:
+			value, ok := filterItem.Value.(string)
+			if !ok {
+				return errors.New(fmt.Sprintf("%+v could not be converted to string", filterItem.Value))
+			}
+			f.FilterItems[i].Value = value
+		case constants.Int:
+			value, err := util.ConvertToInt(filterItem.Value)
+			if err != nil {
+				return errors.New(fmt.Sprintf("could not convert %+v to int in filter", filterItem.Value))
+			}
+			f.FilterItems[i].Value = value
+		case constants.Float:
+			value, err := util.ConvertToFloat64(filterItem.Value)
+			if err != nil {
+				return errors.New(fmt.Sprintf("could not convert %+v to int in filter", filterItem.Value))
+			}
+			f.FilterItems[i].Value = value
+		case constants.DateTime:
+			value, err := util.ConvertToInt(filterItem.Value)
+			if err != nil {
+				return errors.New(fmt.Sprintf("could not convert %+v to int in filter", filterItem.Value))
+			}
+			f.FilterItems[i].Value = int64(value)
 		}
-	case constants.Int:
-		compare, err := util.ConvertToInt(compare)
-		if err != nil {
-			return false, errors.New(fmt.Sprintf("could not convert %+v to int in filter", compare))
-		}
-	case constants.Float:
-		compare, err := util.ConvertToFloat64(compare)
-		if err != nil {
-			return false, errors.New(fmt.Sprintf("could not convert %+v to int in filter", compare))
-		}
-	case constants.DateTime:
-		compare, err := util.ConvertToInt(compare)
-		if err != nil {
-			return false, errors.New(fmt.Sprintf("could not convert %+v to int in filter", compare))
-		}
-		return int64(compare), nil
+		i++
 	}
-	return compare, nil
+	return nil
 }
 
 func (f *Filter) checkString(compare string, value string, op string) bool {

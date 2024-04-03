@@ -15,7 +15,7 @@ type BlobStore interface {
 	DeleteBlob(db string, blob string) error
 	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
 	GetRecordByIndex(db string, blob string, recordId string) (map[string]map[string]map[string]any, error)
-	GetRecordFullScan(db string, blob string, filter objects.Filter) (map[string]map[string]map[string]any, error)
+	GetRecordFullScan(db string, blob string, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
 	DeleteRecord(db string, blob string, recordId string) error
 	AddIndexes(db string, blob string, indexMap map[string]string) error
 	SearchPage(db string, blob string, fileName string, filter objects.Filter, format objects.Format, groups *[constants.SearchThreadCount]map[string]map[string]any, wg *sync.WaitGroup, index int)
@@ -128,12 +128,17 @@ func (bs blobStore) GetRecordByIndex(db string, blob string, recordId string) (m
 	return nil, errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
 }
 
-func (bs blobStore) GetRecordFullScan(db string, blob string, filter objects.Filter) (map[string]map[string]map[string]any, error) {
-	pageItems, err := bs.blobDiskManager.GetPageItems(db, blob)
+func (bs blobStore) GetRecordFullScan(db string, blob string, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error) {
+	format, err := bs.blobDiskManager.GetFormat(db, blob)
 	if err != nil {
 		return nil, err
 	}
-	format, err := bs.blobDiskManager.GetFormat(db, blob)
+	filter := objects.Filter{FilterItems: filterItems, Format: format}
+	err = filter.ConvertFilterItems()
+	if err != nil {
+		return nil, err
+	}
+	pageItems, err := bs.blobDiskManager.GetPageItems(db, blob)
 	if err != nil {
 		return nil, err
 	}
@@ -160,11 +165,6 @@ func (bs blobStore) GetRecordFullScan(db string, blob string, filter objects.Fil
 			total[pageItems[currentFileIndex].FileName] = groupItem
 			currentFileIndex++
 		}
-		/*for _, groupItem := range groups {
-			for key, record := range groupItem {
-				total[key] = record
-			}
-		}*/
 	}
 	return total, nil
 }
@@ -274,7 +274,7 @@ func (bs blobStore) SearchPage(db string, blob string, fileName string, filter o
 		return
 	}
 	for key, record := range pageData {
-		if passes, _ := filter.Passes(record, format); passes {
+		if passes, _ := filter.Passes(record); passes {
 			groupItem[key] = record
 		}
 	}

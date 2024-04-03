@@ -12,7 +12,7 @@ import (
 type PartitionStore interface {
 	CreatePartition(db string, blob string, format objects.Format, partition objects.Partition) (objects.Blob, error)
 	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
-	GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filter objects.Filter) (map[string]map[string]map[string]any, error)
+	GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
 	IsPartition(db string, blob string) bool
 }
 
@@ -82,7 +82,16 @@ func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[
 	return lastRecordId, nil
 }
 
-func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filter objects.Filter) (map[string]map[string]map[string]any, error) {
+func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error) {
+	format, err := ps.blobDiskManager.GetFormat(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	filter := objects.Filter{FilterItems: filterItems, Format: format}
+	err = filter.ConvertFilterItems()
+	if err != nil {
+		return nil, err
+	}
 	partitionHashKeyFileNames, err := ps.partitionDiskManager.GetPartitionHashKeyItemFileNames(db, blob)
 	if err != nil {
 		return nil, err
@@ -92,10 +101,6 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 		return nil, err
 	}
 	partitionHashKeyFileNames, err = ps.filterPartitionFiles(partitionHashKeyFileNames, partition, searchPartition)
-	if err != nil {
-		return nil, err
-	}
-	format, err := ps.blobDiskManager.GetFormat(db, blob)
 	if err != nil {
 		return nil, err
 	}

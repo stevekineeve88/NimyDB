@@ -174,20 +174,24 @@ func (qa *QueryAnalyser) getActions(queryParams QueryParams) QueryResult {
 			return QueryResult{Error: true, ErrorMessage: "'name' property must match db.blob format"}
 		}
 		if queryParams.With.PartitionSearch != nil {
-			records, err := qa.partitionStore.GetRecordsByPartition(blobParts[0], blobParts[1], queryParams.With.PartitionSearch, objects.Filter{FilterItems: queryParams.With.Filter})
+			records, err := qa.partitionStore.GetRecordsByPartition(blobParts[0], blobParts[1], queryParams.With.PartitionSearch, queryParams.With.Filter)
 			if err != nil {
 				return QueryResult{Error: true, ErrorMessage: err.Error()}
 			}
 			return QueryResult{Records: records, Error: false}
 		}
-		if err := qa.checkRecordId(queryParams.With.RecordId); err == nil {
-			record, err := qa.blobStore.GetRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId)
-			if err != nil {
+		if queryParams.With.RecordId != "" {
+			if err := qa.checkRecordId(queryParams.With.RecordId); err == nil {
+				record, err := qa.blobStore.GetRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId)
+				if err != nil {
+					return QueryResult{Error: true, ErrorMessage: err.Error()}
+				}
+				return QueryResult{Records: record, Error: false}
+			} else {
 				return QueryResult{Error: true, ErrorMessage: err.Error()}
 			}
-			return QueryResult{Records: record, Error: false}
 		}
-		records, err := qa.blobStore.GetRecordFullScan(blobParts[0], blobParts[1], objects.Filter{FilterItems: queryParams.With.Filter})
+		records, err := qa.blobStore.GetRecordFullScan(blobParts[0], blobParts[1], queryParams.With.Filter)
 		if err != nil {
 			return QueryResult{Error: true, ErrorMessage: err.Error()}
 		}
