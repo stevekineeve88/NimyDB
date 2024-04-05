@@ -89,6 +89,22 @@ func (b *Blob) FormatRecord(record map[string]any) (map[string]any, error) {
 	return newRecord, nil
 }
 
+func (b *Blob) FormatUpdateRecord(record map[string]any) (map[string]any, error) {
+	newRecord := make(map[string]any)
+	for key, value := range record {
+		formatItem, ok := b.Format.GetMap()[key]
+		if !ok {
+			return nil, errors.New(fmt.Sprintf("key %s does not exist in %s", key, b.Name))
+		}
+		newValue, err := b.convertRecordValue(value, formatItem)
+		if err != nil {
+			return nil, errors.New(fmt.Sprintf("error on key %s: %s", key, err.Error()))
+		}
+		newRecord[key] = newValue
+	}
+	return newRecord, nil
+}
+
 func (b *Blob) GetPartition() Partition {
 	return b.Partition
 }

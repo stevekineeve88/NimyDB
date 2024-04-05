@@ -17,6 +17,7 @@ type BlobStore interface {
 	GetRecordByIndex(db string, blob string, recordId string) (map[string]map[string]map[string]any, error)
 	GetRecordFullScan(db string, blob string, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
 	DeleteRecord(db string, blob string, recordId string) error
+	UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (int, error)
 	AddIndexes(db string, blob string, indexMap map[string]string) error
 	SearchPage(db string, blob string, fileName string, filter objects.Filter, format objects.Format, groups *[constants.SearchThreadCount]map[string]map[string]any, wg *sync.WaitGroup, index int)
 }
@@ -210,6 +211,37 @@ func (bs blobStore) DeleteRecord(db string, blob string, recordId string) error 
 		}
 	}
 	return errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
+}
+
+func (bs blobStore) UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (int, error) {
+	recordMap, err := bs.GetRecordByIndex(db, blob, recordId)
+	if err != nil {
+		return 0, err
+	}
+	format, err := bs.blobDiskManager.GetFormat(db, blob)
+	if err != nil {
+		return 0, err
+	}
+	blobObj := objects.CreateBlob(blob, format)
+	updateRecordFormatted, err := blobObj.FormatUpdateRecord(updateRecord)
+	if err != nil {
+		return 0, err
+	}
+	for pageFile, _ := range recordMap {
+		for key, value := range updateRecordFormatted {
+			recordMap[pageFile][recordId][key] = value
+		}
+		pageData, err := bs.blobDiskManager.GetPageData(db, blob, pageFile)
+		if err != nil {
+			return 0, err
+		}
+		pageData[recordId] = recordMap[pageFile][recordId]
+		err = bs.blobDiskManager.WritePageData(db, blob, pageFile, pageData)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return 1, nil
 }
 
 func (bs blobStore) AddIndexes(db string, blob string, indexMap map[string]string) error {

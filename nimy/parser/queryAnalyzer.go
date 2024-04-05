@@ -34,6 +34,7 @@ type QueryAnalyser struct {
 }
 
 type QueryResult struct {
+	Affected     int
 	Records      map[string]map[string]map[string]any `json:"records,omitempty"`
 	Blob         objects.Blob                         `json:"blob,omitempty"`
 	DB           objects.DB                           `json:"db,omitempty"`
@@ -66,6 +67,8 @@ func (qa *QueryAnalyser) Query(queryParams QueryParams) QueryResult {
 		return qa.deleteActions(queryParams)
 	case constants.ActionGet:
 		return qa.getActions(queryParams)
+	case constants.ActionUpdate:
+		return qa.updateActions(queryParams)
 	default:
 		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'action' parameter %s not applicable", queryParams.On)}
 	}
@@ -196,6 +199,34 @@ func (qa *QueryAnalyser) getActions(queryParams QueryParams) QueryResult {
 			return QueryResult{Error: true, ErrorMessage: err.Error()}
 		}
 		return QueryResult{Records: records, Error: false}
+	default:
+		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'on' parameter %s not applicable with action", queryParams.On)}
+	}
+}
+
+func (qa *QueryAnalyser) updateActions(queryParams QueryParams) QueryResult {
+	switch queryParams.On {
+	case constants.OnRecords:
+		blobParts := strings.Split(queryParams.Name, ".")
+		if len(blobParts) != 2 {
+			return QueryResult{Error: true, ErrorMessage: "'name' property must match db.blob format"}
+		}
+		if queryParams.With.RecordId != "" {
+			if err := qa.checkRecordId(queryParams.With.RecordId); err == nil {
+				if !qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
+					affected, err := qa.blobStore.UpdateRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId, queryParams.With.Record)
+					if err != nil {
+						return QueryResult{Error: true, ErrorMessage: err.Error()}
+					}
+					return QueryResult{Affected: affected, Error: false}
+				} else {
+					return QueryResult{ErrorMessage: "cannot update partition table", Error: true}
+				}
+			} else {
+				return QueryResult{Error: true, ErrorMessage: err.Error()}
+			}
+		}
+		return QueryResult{Error: false}
 	default:
 		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'on' parameter %s not applicable with action", queryParams.On)}
 	}
