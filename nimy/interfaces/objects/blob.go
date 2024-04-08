@@ -96,6 +96,11 @@ func (b *Blob) FormatUpdateRecord(record map[string]any) (map[string]any, error)
 		if !ok {
 			return nil, errors.New(fmt.Sprintf("key %s does not exist in %s", key, b.Name))
 		}
+		for _, partitionKey := range b.Partition.Keys {
+			if key == partitionKey {
+				return nil, errors.New(fmt.Sprintf("key %s cannot be updated because belongs to partition", key))
+			}
+		}
 		newValue, err := b.convertRecordValue(value, formatItem)
 		if err != nil {
 			return nil, errors.New(fmt.Sprintf("error on key %s: %s", key, err.Error()))

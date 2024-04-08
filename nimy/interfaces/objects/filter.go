@@ -119,14 +119,20 @@ func (f *Filter) ConvertFilterItems() error {
 
 func (f *Filter) checkString(compare string, value string, op string) bool {
 	switch op {
+	case "CONTAINS_CS":
+		return strings.Contains(value, compare)
 	case "CONTAINS":
 		return strings.Contains(strings.ToLower(value), strings.ToLower(compare))
+	case "PREFIX_CS":
+		return strings.HasPrefix(value, compare)
 	case "PREFIX":
 		return strings.HasPrefix(strings.ToLower(value), strings.ToLower(compare))
+	case "SUFFIX_CS":
+		return strings.HasSuffix(value, compare)
 	case "SUFFIX":
 		return strings.HasSuffix(strings.ToLower(value), strings.ToLower(compare))
 	case "=":
-		return strings.ToLower(value) == strings.ToLower(compare)
+		return value == compare
 	default:
 		return false
 	}

@@ -17,9 +17,11 @@ type BlobStore interface {
 	GetRecordByIndex(db string, blob string, recordId string) (map[string]map[string]map[string]any, error)
 	GetRecordFullScan(db string, blob string, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
 	DeleteRecord(db string, blob string, recordId string) error
-	UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (int, error)
+	UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (map[string]map[string]map[string]any, error)
+	UpdateRecords(db string, blob string, updateRecord map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
 	AddIndexes(db string, blob string, indexMap map[string]string) error
-	SearchPage(db string, blob string, fileName string, filter objects.Filter, format objects.Format, groups *[constants.SearchThreadCount]map[string]map[string]any, wg *sync.WaitGroup, index int)
+	SearchPage(db string, blob string, fileName string, filter objects.Filter, groups *[constants.SearchThreadCount]map[string]map[string]any, wg *sync.WaitGroup, index int)
+	SearchPageUpdate(db string, blob string, fileName string, filter objects.Filter, wg *sync.WaitGroup, updateRecordFormatted map[string]any, groups *[constants.SearchThreadCount]map[string]map[string]any, index int)
 }
 
 type blobStore struct {
@@ -117,7 +119,7 @@ func (bs blobStore) GetRecordByIndex(db string, blob string, recordId string) (m
 			}
 			record, ok := recordMap[recordId]
 			if !ok {
-				return nil, err
+				return nil, errors.New(fmt.Sprintf("index %s is corrupted", recordId))
 			}
 			return map[string]map[string]map[string]any{
 				pageFileName: {
@@ -148,12 +150,12 @@ func (bs blobStore) GetRecordFullScan(db string, blob string, filterItems []obje
 	for i := 0; i < len(pageItems); i += constants.SearchThreadCount {
 		var groups [constants.SearchThreadCount]map[string]map[string]any
 		threadItem := i
-		threadCount := 0
-		for threadItem < len(pageItems) && threadCount < constants.SearchThreadCount {
+		threadIndex := 0
+		for threadItem < len(pageItems) && threadIndex < constants.SearchThreadCount {
 			wg.Add(1)
-			go bs.SearchPage(db, blob, pageItems[threadItem].FileName, filter, format, &groups, &wg, threadCount)
+			go bs.SearchPage(db, blob, pageItems[threadItem].FileName, filter, &groups, &wg, threadIndex)
 			threadItem++
-			threadCount++
+			threadIndex++
 		}
 		wg.Wait()
 		currentFileIndex := i
@@ -213,35 +215,100 @@ func (bs blobStore) DeleteRecord(db string, blob string, recordId string) error 
 	return errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
 }
 
-func (bs blobStore) UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (int, error) {
-	recordMap, err := bs.GetRecordByIndex(db, blob, recordId)
-	if err != nil {
-		return 0, err
-	}
+func (bs blobStore) UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (map[string]map[string]map[string]any, error) {
 	format, err := bs.blobDiskManager.GetFormat(db, blob)
 	if err != nil {
-		return 0, err
+		return nil, err
+	}
+	indexPrefixMap, err := bs.blobDiskManager.GetPrefixIndexItems(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	indexPrefixItem, ok := indexPrefixMap[constants.GetRecordIdPrefix(recordId)]
+	if !ok {
+		return nil, err
 	}
 	blobObj := objects.CreateBlob(blob, format)
 	updateRecordFormatted, err := blobObj.FormatUpdateRecord(updateRecord)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	for pageFile, _ := range recordMap {
-		for key, value := range updateRecordFormatted {
-			recordMap[pageFile][recordId][key] = value
-		}
-		pageData, err := bs.blobDiskManager.GetPageData(db, blob, pageFile)
+	for _, indexFileName := range indexPrefixItem.FileNames {
+		indexMap, err := bs.blobDiskManager.GetIndexData(db, blob, indexFileName)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		pageData[recordId] = recordMap[pageFile][recordId]
-		err = bs.blobDiskManager.WritePageData(db, blob, pageFile, pageData)
-		if err != nil {
-			return 0, err
+		pageFileName, ok := indexMap[recordId]
+		if ok {
+			recordMap, err := bs.blobDiskManager.GetPageData(db, blob, pageFileName)
+			if err != nil {
+				return nil, err
+			}
+			_, ok = recordMap[recordId]
+			if !ok {
+				return nil, errors.New(fmt.Sprintf("index %s is corrupted", recordId))
+			}
+			for key, value := range updateRecordFormatted {
+				recordMap[recordId][key] = value
+			}
+			err = bs.blobDiskManager.WritePageData(db, blob, pageFileName, recordMap)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]map[string]map[string]any{
+				pageFileName: {
+					recordId: recordMap[recordId],
+				},
+			}, nil
 		}
 	}
-	return 1, nil
+	return nil, errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
+}
+
+func (bs blobStore) UpdateRecords(db string, blob string, updateRecord map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error) {
+	format, err := bs.blobDiskManager.GetFormat(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	filter := objects.Filter{FilterItems: filterItems, Format: format}
+	err = filter.ConvertFilterItems()
+	if err != nil {
+		return nil, err
+	}
+	pageItems, err := bs.blobDiskManager.GetPageItems(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	blobObj := objects.CreateBlob(blob, format)
+	updateRecordFormatted, err := blobObj.FormatUpdateRecord(updateRecord)
+	if err != nil {
+		return nil, err
+	}
+	total := make(map[string]map[string]map[string]any)
+	var wg sync.WaitGroup
+	for i := 0; i < len(pageItems); i += constants.SearchThreadCount {
+		var groups [constants.SearchThreadCount]map[string]map[string]any
+		threadItem := i
+		threadIndex := 0
+		for threadItem < len(pageItems) && threadIndex < constants.SearchThreadCount {
+			wg.Add(1)
+			go bs.SearchPageUpdate(db, blob, pageItems[threadItem].FileName, filter, &wg, updateRecordFormatted, &groups, threadIndex)
+			threadItem++
+			threadIndex++
+		}
+		wg.Wait()
+		currentFileIndex := i
+
+		for _, groupItem := range groups {
+			if len(groupItem) == 0 {
+				currentFileIndex++
+				continue
+			}
+			total[pageItems[currentFileIndex].FileName] = groupItem
+			currentFileIndex++
+		}
+	}
+	return total, nil
 }
 
 func (bs blobStore) AddIndexes(db string, blob string, indexMap map[string]string) error {
@@ -298,7 +365,7 @@ func (bs blobStore) AddIndexes(db string, blob string, indexMap map[string]strin
 	return nil
 }
 
-func (bs blobStore) SearchPage(db string, blob string, fileName string, filter objects.Filter, format objects.Format, groups *[constants.SearchThreadCount]map[string]map[string]any, wg *sync.WaitGroup, index int) {
+func (bs blobStore) SearchPage(db string, blob string, fileName string, filter objects.Filter, groups *[constants.SearchThreadCount]map[string]map[string]any, wg *sync.WaitGroup, index int) {
 	defer wg.Done()
 	groupItem := make(map[string]map[string]any)
 	pageData, err := bs.blobDiskManager.GetPageData(db, blob, fileName)
@@ -308,6 +375,32 @@ func (bs blobStore) SearchPage(db string, blob string, fileName string, filter o
 	for key, record := range pageData {
 		if passes, _ := filter.Passes(record); passes {
 			groupItem[key] = record
+		}
+	}
+	groups[index] = groupItem
+}
+
+func (bs blobStore) SearchPageUpdate(db string, blob string, fileName string, filter objects.Filter, wg *sync.WaitGroup, updateRecordFormatted map[string]any, groups *[constants.SearchThreadCount]map[string]map[string]any, index int) {
+	defer wg.Done()
+	pageData, err := bs.blobDiskManager.GetPageData(db, blob, fileName)
+	if err != nil {
+		return
+	}
+	groupItem := make(map[string]map[string]any)
+	affected := 0
+	for recordId, record := range pageData {
+		if passes, _ := filter.Passes(record); passes {
+			for key, value := range updateRecordFormatted {
+				pageData[recordId][key] = value
+			}
+			groupItem[recordId] = pageData[recordId]
+			affected++
+		}
+	}
+	if affected > 0 {
+		err = bs.blobDiskManager.WritePageData(db, blob, fileName, pageData)
+		if err != nil {
+			return
 		}
 	}
 	groups[index] = groupItem

@@ -34,7 +34,6 @@ type QueryAnalyser struct {
 }
 
 type QueryResult struct {
-	Affected     int
 	Records      map[string]map[string]map[string]any `json:"records,omitempty"`
 	Blob         objects.Blob                         `json:"blob,omitempty"`
 	DB           objects.DB                           `json:"db,omitempty"`
@@ -214,16 +213,46 @@ func (qa *QueryAnalyser) updateActions(queryParams QueryParams) QueryResult {
 		if queryParams.With.RecordId != "" {
 			if err := qa.checkRecordId(queryParams.With.RecordId); err == nil {
 				if !qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
-					affected, err := qa.blobStore.UpdateRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId, queryParams.With.Record)
+					records, err := qa.blobStore.UpdateRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId, queryParams.With.Record)
 					if err != nil {
 						return QueryResult{Error: true, ErrorMessage: err.Error()}
 					}
-					return QueryResult{Affected: affected, Error: false}
+					return QueryResult{Records: records, Error: false}
 				} else {
-					return QueryResult{ErrorMessage: "cannot update partition table", Error: true}
+					records, err := qa.partitionStore.UpdateRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId, queryParams.With.Record)
+					if err != nil {
+						return QueryResult{Error: true, ErrorMessage: err.Error()}
+					}
+					return QueryResult{Records: records, Error: false}
 				}
 			} else {
 				return QueryResult{Error: true, ErrorMessage: err.Error()}
+			}
+		}
+		if queryParams.With.PartitionSearch != nil {
+			if !qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
+				return QueryResult{Error: false}
+			} else {
+				records, err := qa.partitionStore.UpdateRecordsByPartition(blobParts[0], blobParts[1], queryParams.With.Record, queryParams.With.PartitionSearch, queryParams.With.Filter)
+				if err != nil {
+					return QueryResult{Error: true, ErrorMessage: err.Error()}
+				}
+				return QueryResult{Records: records, Error: false}
+			}
+		}
+		if queryParams.With.Filter != nil {
+			if !qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
+				records, err := qa.blobStore.UpdateRecords(blobParts[0], blobParts[1], queryParams.With.Record, queryParams.With.Filter)
+				if err != nil {
+					return QueryResult{Error: true, ErrorMessage: err.Error()}
+				}
+				return QueryResult{Records: records, Error: false}
+			} else {
+				records, err := qa.partitionStore.UpdateRecords(blobParts[0], blobParts[1], queryParams.With.Record, queryParams.With.Filter)
+				if err != nil {
+					return QueryResult{Error: true, ErrorMessage: err.Error()}
+				}
+				return QueryResult{Records: records, Error: false}
 			}
 		}
 		return QueryResult{Error: false}

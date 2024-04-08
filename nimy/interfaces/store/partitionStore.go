@@ -1,6 +1,8 @@
 package store
 
 import (
+	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/disk"
@@ -13,6 +15,9 @@ type PartitionStore interface {
 	CreatePartition(db string, blob string, format objects.Format, partition objects.Partition) (objects.Blob, error)
 	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
 	GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
+	UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (map[string]map[string]map[string]any, error)
+	UpdateRecordsByPartition(db string, blob string, updateRecord map[string]any, searchPartition map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
+	UpdateRecords(db string, blob string, updateRecord map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
 	IsPartition(db string, blob string) bool
 }
 
@@ -115,12 +120,12 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 		for i := 0; i < len(partitionItem.FileNames); i += constants.SearchThreadCount {
 			var groups [constants.SearchThreadCount]map[string]map[string]any
 			threadItem := i
-			threadCount := 0
-			for threadItem < len(partitionItem.FileNames) && threadCount < constants.SearchThreadCount {
+			threadIndex := 0
+			for threadItem < len(partitionItem.FileNames) && threadIndex < constants.SearchThreadCount {
 				wg.Add(1)
-				go ps.blobStore.SearchPage(db, blob, partitionItem.FileNames[threadItem], filter, format, &groups, &wg, threadCount)
+				go ps.blobStore.SearchPage(db, blob, partitionItem.FileNames[threadItem], filter, &groups, &wg, threadIndex)
 				threadItem++
-				threadCount++
+				threadIndex++
 			}
 			wg.Wait()
 			currentFileIndex := i
@@ -132,6 +137,170 @@ func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPar
 				total[partitionItem.FileNames[currentFileIndex]] = groupItem
 				currentFileIndex++
 			}
+		}
+	}
+	return total, nil
+}
+
+func (ps partitionStore) UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (map[string]map[string]map[string]any, error) {
+	format, err := ps.blobDiskManager.GetFormat(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	partition, err := ps.partitionDiskManager.GetPartition(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	indexPrefixMap, err := ps.blobDiskManager.GetPrefixIndexItems(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	indexPrefixItem, ok := indexPrefixMap[constants.GetRecordIdPrefix(recordId)]
+	if !ok {
+		return nil, err
+	}
+	blobObj := objects.CreateBlobWithPartition(blob, format, partition)
+	updateRecordFormatted, err := blobObj.FormatUpdateRecord(updateRecord)
+	if err != nil {
+		return nil, err
+	}
+	for _, indexFileName := range indexPrefixItem.FileNames {
+		indexMap, err := ps.blobDiskManager.GetIndexData(db, blob, indexFileName)
+		if err != nil {
+			return nil, err
+		}
+		pageFileName, ok := indexMap[recordId]
+		if ok {
+			recordMap, err := ps.blobDiskManager.GetPageData(db, blob, pageFileName)
+			if err != nil {
+				return nil, err
+			}
+			_, ok = recordMap[recordId]
+			if !ok {
+				return nil, errors.New(fmt.Sprintf("index %s is corrupted", recordId))
+			}
+			for key, value := range updateRecordFormatted {
+				recordMap[recordId][key] = value
+			}
+			err = ps.blobDiskManager.WritePageData(db, blob, pageFileName, recordMap)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]map[string]map[string]any{
+				pageFileName: {
+					recordId: recordMap[recordId],
+				},
+			}, nil
+		}
+	}
+	return nil, errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
+}
+
+func (ps partitionStore) UpdateRecordsByPartition(db string, blob string, updateRecord map[string]any, searchPartition map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error) {
+	format, err := ps.blobDiskManager.GetFormat(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	filter := objects.Filter{FilterItems: filterItems, Format: format}
+	err = filter.ConvertFilterItems()
+	if err != nil {
+		return nil, err
+	}
+	partitionHashKeyFileNames, err := ps.partitionDiskManager.GetPartitionHashKeyItemFileNames(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	partition, err := ps.partitionDiskManager.GetPartition(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	partitionHashKeyFileNames, err = ps.filterPartitionFiles(partitionHashKeyFileNames, partition, searchPartition)
+	if err != nil {
+		return nil, err
+	}
+	blobObj := objects.CreateBlobWithPartition(blob, format, partition)
+	updateRecordFormatted, err := blobObj.FormatUpdateRecord(updateRecord)
+	if err != nil {
+		return nil, err
+	}
+	total := make(map[string]map[string]map[string]any)
+	for _, partitionHashKeyFileName := range partitionHashKeyFileNames {
+		hashKey := strings.Split(partitionHashKeyFileName, ".json")[0]
+		partitionItem, err := ps.partitionDiskManager.GetPartitionHashKeyItem(db, blob, hashKey)
+		if err != nil {
+			return total, err
+		}
+		var wg sync.WaitGroup
+		for i := 0; i < len(partitionItem.FileNames); i += constants.SearchThreadCount {
+			var groups [constants.SearchThreadCount]map[string]map[string]any
+			threadItem := i
+			threadIndex := 0
+			for threadItem < len(partitionItem.FileNames) && threadIndex < constants.SearchThreadCount {
+				wg.Add(1)
+				go ps.blobStore.SearchPageUpdate(db, blob, partitionItem.FileNames[threadItem], filter, &wg, updateRecordFormatted, &groups, threadIndex)
+				threadItem++
+				threadIndex++
+			}
+			wg.Wait()
+			currentFileIndex := i
+			for _, groupItem := range groups {
+				if len(groupItem) == 0 {
+					currentFileIndex++
+					continue
+				}
+				total[partitionItem.FileNames[currentFileIndex]] = groupItem
+				currentFileIndex++
+			}
+		}
+	}
+	return total, nil
+}
+
+func (ps partitionStore) UpdateRecords(db string, blob string, updateRecord map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error) {
+	format, err := ps.blobDiskManager.GetFormat(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	partition, err := ps.partitionDiskManager.GetPartition(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	filter := objects.Filter{FilterItems: filterItems, Format: format}
+	err = filter.ConvertFilterItems()
+	if err != nil {
+		return nil, err
+	}
+	pageItems, err := ps.blobDiskManager.GetPageItems(db, blob)
+	if err != nil {
+		return nil, err
+	}
+	blobObj := objects.CreateBlobWithPartition(blob, format, partition)
+	updateRecordFormatted, err := blobObj.FormatUpdateRecord(updateRecord)
+	if err != nil {
+		return nil, err
+	}
+	total := make(map[string]map[string]map[string]any)
+	var wg sync.WaitGroup
+	for i := 0; i < len(pageItems); i += constants.SearchThreadCount {
+		var groups [constants.SearchThreadCount]map[string]map[string]any
+		threadItem := i
+		threadIndex := 0
+		for threadItem < len(pageItems) && threadIndex < constants.SearchThreadCount {
+			wg.Add(1)
+			go ps.blobStore.SearchPageUpdate(db, blob, pageItems[threadItem].FileName, filter, &wg, updateRecordFormatted, &groups, threadIndex)
+			threadItem++
+			threadIndex++
+		}
+		wg.Wait()
+		currentFileIndex := i
+
+		for _, groupItem := range groups {
+			if len(groupItem) == 0 {
+				currentFileIndex++
+				continue
+			}
+			total[pageItems[currentFileIndex].FileName] = groupItem
+			currentFileIndex++
 		}
 	}
 	return total, nil
