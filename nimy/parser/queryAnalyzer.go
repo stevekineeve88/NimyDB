@@ -34,12 +34,12 @@ type QueryAnalyser struct {
 }
 
 type QueryResult struct {
-	Records      map[string]map[string]map[string]any `json:"records,omitempty"`
-	Blob         objects.Blob                         `json:"blob,omitempty"`
-	DB           objects.DB                           `json:"db,omitempty"`
-	LastInsertId string                               `json:"last_insert_id,omitempty"`
-	Error        bool                                 `json:"error,required"`
-	ErrorMessage string                               `json:"error_message,omitempty"`
+	Records          map[string]map[string]map[string]any `json:"records,omitempty"`
+	DeletedRecordIds map[string][]string                  `json:"deletedRecordIds,omitempty"`
+	Blob             objects.Blob                         `json:"blob,omitempty"`
+	DB               objects.DB                           `json:"db,omitempty"`
+	Error            bool                                 `json:"error,required"`
+	ErrorMessage     string                               `json:"error_message,omitempty"`
 }
 
 func CreateQueryAnalyser(dataLocation string) QueryAnalyser {
@@ -116,17 +116,17 @@ func (qa *QueryAnalyser) createActions(queryParams QueryParams) QueryResult {
 			records = queryParams.With.Records
 		}
 		if qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
-			lastInsertId, err := qa.partitionStore.AddRecords(blobParts[0], blobParts[1], records)
+			insertedRecords, err := qa.partitionStore.AddRecords(blobParts[0], blobParts[1], records)
 			if err != nil {
 				return QueryResult{Error: true, ErrorMessage: err.Error()}
 			}
-			return QueryResult{LastInsertId: lastInsertId, Error: false}
+			return QueryResult{Records: insertedRecords, Error: false}
 		}
-		lastInsertId, err := qa.blobStore.AddRecords(blobParts[0], blobParts[1], records)
+		insertedRecords, err := qa.blobStore.AddRecords(blobParts[0], blobParts[1], records)
 		if err != nil {
 			return QueryResult{Error: true, ErrorMessage: err.Error()}
 		}
-		return QueryResult{LastInsertId: lastInsertId, Error: false}
+		return QueryResult{Records: insertedRecords, Error: false}
 	default:
 		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'on' parameter %s not applicable with action", queryParams.On)}
 	}
@@ -158,11 +158,11 @@ func (qa *QueryAnalyser) deleteActions(queryParams QueryParams) QueryResult {
 		if err := qa.checkRecordId(queryParams.With.RecordId); err != nil {
 			return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("error on RECORD_ID: %s", err.Error())}
 		}
-		err := qa.blobStore.DeleteRecord(blobParts[0], blobParts[1], queryParams.With.RecordId)
+		recordIds, err := qa.blobStore.DeleteRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId)
 		if err != nil {
 			return QueryResult{Error: true, ErrorMessage: err.Error()}
 		}
-		return QueryResult{Error: false}
+		return QueryResult{DeletedRecordIds: recordIds, Error: false}
 	default:
 		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'on' parameter %s not applicable with action", queryParams.On)}
 	}

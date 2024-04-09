@@ -13,10 +13,10 @@ import (
 type BlobStore interface {
 	CreateBlob(db string, blob string, format objects.Format) (objects.Blob, error)
 	DeleteBlob(db string, blob string) error
-	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
+	AddRecords(db string, blob string, insertRecords []map[string]any) (map[string]map[string]map[string]any, error)
 	GetRecordByIndex(db string, blob string, recordId string) (map[string]map[string]map[string]any, error)
 	GetRecordFullScan(db string, blob string, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
-	DeleteRecord(db string, blob string, recordId string) error
+	DeleteRecordByIndex(db string, blob string, recordId string) (map[string][]string, error)
 	UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (map[string]map[string]map[string]any, error)
 	UpdateRecords(db string, blob string, updateRecord map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
 	AddIndexes(db string, blob string, indexMap map[string]string) error
@@ -52,49 +52,62 @@ func (bs blobStore) DeleteBlob(db string, blob string) error {
 	return bs.blobDiskManager.DeleteBlob(db, blob)
 }
 
-func (bs blobStore) AddRecords(db string, blob string, insertRecords []map[string]any) (string, error) {
+func (bs blobStore) AddRecords(db string, blob string, insertRecords []map[string]any) (map[string]map[string]map[string]any, error) {
 	format, err := bs.blobDiskManager.GetFormat(db, blob)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	pageItems, err := bs.blobDiskManager.GetPageItems(db, blob)
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	if len(pageItems) == 0 {
+		pageItem, err := bs.blobDiskManager.CreatePage(db, blob)
+		if err != nil {
+			return nil, err
+		}
+		pageItems = append(pageItems, pageItem)
 	}
 	currentLastPage := pageItems[len(pageItems)-1]
 	recordMap, err := bs.blobDiskManager.GetPageData(db, blob, currentLastPage.FileName)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	blobObj := objects.CreateBlob(blob, format)
-	lastRecordId := ""
+	total := make(map[string]map[string]map[string]any)
+	total[currentLastPage.FileName] = make(map[string]map[string]any)
 	indexMap := make(map[string]string)
 	for _, insertRecord := range insertRecords {
 		newInsertRecord, err := blobObj.FormatRecord(insertRecord)
 		if err != nil {
-			return lastRecordId, err
+			return total, err
 		}
-		lastRecordId = uuid.New().String()
+		lastRecordId := uuid.New().String()
 		recordMap[lastRecordId] = newInsertRecord
+		total[currentLastPage.FileName][lastRecordId] = newInsertRecord
 		indexMap[lastRecordId] = currentLastPage.FileName
 		if len(recordMap) > constants.MaxPageSize {
 			err = bs.blobDiskManager.WritePageData(db, blob, currentLastPage.FileName, recordMap)
 			if err != nil {
-				return lastRecordId, err
+				delete(total, currentLastPage.FileName)
+				return total, err
 			}
+			total[currentLastPage.FileName] = recordMap
 			currentLastPage, err = bs.blobDiskManager.CreatePage(db, blob)
 			if err != nil {
-				return lastRecordId, err
+				return total, err
 			}
+			total[currentLastPage.FileName] = make(map[string]map[string]any)
 			recordMap = make(map[string]map[string]any)
 		}
 	}
 	err = bs.blobDiskManager.WritePageData(db, blob, currentLastPage.FileName, recordMap)
 	if err != nil {
-		return lastRecordId, err
+		delete(total, currentLastPage.FileName)
+		return total, err
 	}
 	err = bs.AddIndexes(db, blob, indexMap)
-	return lastRecordId, err
+	return total, err
 }
 
 func (bs blobStore) GetRecordByIndex(db string, blob string, recordId string) (map[string]map[string]map[string]any, error) {
@@ -172,47 +185,69 @@ func (bs blobStore) GetRecordFullScan(db string, blob string, filterItems []obje
 	return total, nil
 }
 
-func (bs blobStore) DeleteRecord(db string, blob string, recordId string) error {
+func (bs blobStore) DeleteRecordByIndex(db string, blob string, recordId string) (map[string][]string, error) {
 	indexPrefixMap, err := bs.blobDiskManager.GetPrefixIndexItems(db, blob)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	indexPrefixItem, ok := indexPrefixMap[constants.GetRecordIdPrefix(recordId)]
 	if !ok {
-		return err
+		return nil, err
 	}
 	for _, indexFileName := range indexPrefixItem.FileNames {
 		indexMap, err := bs.blobDiskManager.GetIndexData(db, blob, indexFileName)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		pageFileName, ok := indexMap[recordId]
 		if ok {
 			pageItem := objects.PageItem{FileName: pageFileName}
 			recordMap, err := bs.blobDiskManager.GetPageData(db, blob, pageItem.FileName)
 			if err != nil {
-				return err
+				return nil, err
 			}
+			tempRecord := recordMap[recordId]
+
 			delete(recordMap, recordId)
 			delete(indexMap, recordId)
-			err = bs.blobDiskManager.WritePageData(db, blob, pageItem.FileName, recordMap)
-			if err != nil {
-				return err
-			}
-			err = bs.blobDiskManager.WriteIndexData(db, blob, indexFileName, indexMap)
-			if err != nil {
-				return err
-			}
+
 			if len(recordMap) == 0 {
-				_ = bs.blobDiskManager.DeletePageItem(db, blob, pageItem)
+				err = bs.blobDiskManager.DeletePageItem(db, blob, pageItem)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				err = bs.blobDiskManager.WritePageData(db, blob, pageItem.FileName, recordMap)
+				if err != nil {
+					return nil, err
+				}
 			}
+
 			if len(indexMap) == 0 {
-				_ = bs.blobDiskManager.DeleteIndexFile(db, blob, indexFileName)
+				err = bs.blobDiskManager.DeleteIndexFile(db, blob, indexFileName)
+				if err != nil {
+					recordMap[recordId] = tempRecord
+					if writeErr := bs.blobDiskManager.WritePageData(db, blob, pageItem.FileName, recordMap); writeErr != nil {
+						panic(writeErr)
+					}
+					return nil, err
+				}
+			} else {
+				err = bs.blobDiskManager.WriteIndexData(db, blob, indexFileName, indexMap)
+				if err != nil {
+					recordMap[recordId] = tempRecord
+					if writeErr := bs.blobDiskManager.WritePageData(db, blob, pageItem.FileName, recordMap); writeErr != nil {
+						panic(writeErr)
+					}
+					return nil, err
+				}
 			}
-			return nil
+			return map[string][]string{
+				pageFileName: {recordId},
+			}, nil
 		}
 	}
-	return errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
+	return nil, errors.New(fmt.Sprintf("no record found with ID %s in blob %s", recordId, blob))
 }
 
 func (bs blobStore) UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (map[string]map[string]map[string]any, error) {
@@ -404,4 +439,12 @@ func (bs blobStore) SearchPageUpdate(db string, blob string, fileName string, fi
 		}
 	}
 	groups[index] = groupItem
+}
+
+func (bs blobStore) SearchPageDelete(db string, blob string, fileName string, filter objects.Filter, wg *sync.WaitGroup, groups *[constants.SearchThreadCount][]string, index int) {
+	//Code for Search page delete here
+}
+
+func (bs blobStore) DeleteIndexes(recordIds []string, indexPrefixMap map[string]objects.PrefixIndexItem) {
+	//Code to delete mass indexes here.
 }

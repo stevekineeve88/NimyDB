@@ -56,10 +56,6 @@ func (bdm blobDiskManager) CreateBlob(db string, blob string, format objects.For
 			return bdm.CreateFormatFile(db, blob, format)
 		},
 		bdm.CreatePagesFileAndDir,
-		func(db string, blob string) error {
-			_, err = bdm.CreatePage(db, blob)
-			return err
-		},
 		bdm.CreateIndexesFileAndDir,
 	}
 
@@ -254,23 +250,21 @@ func (bdm blobDiskManager) DeletePageItem(db string, blob string, dPageItem obje
 	}
 	for index, pageItem := range pageItems {
 		if pageItem.FileName == dPageItem.FileName {
-			if len(pageItems) > 1 {
-				copy(pageItems[index:], pageItems[index+1:])
-				pageItems[len(pageItems)-1] = objects.PageItem{}
-				pageItems = pageItems[:len(pageItems)-1]
+			copy(pageItems[index:], pageItems[index+1:])
+			pageItems[len(pageItems)-1] = objects.PageItem{}
+			pageItems = pageItems[:len(pageItems)-1]
 
-				directoryName := fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob)
+			directoryName := fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob)
+			err = bdm.WritePagesFile(directoryName, pageItems)
+			if err != nil {
+				return err
+			}
+			err = os.Remove(fmt.Sprintf("%s/%s", directoryName, dPageItem.FileName))
+			if err != nil {
+				pageItems = append(pageItems, dPageItem)
 				err = bdm.WritePagesFile(directoryName, pageItems)
 				if err != nil {
-					return err
-				}
-				err = os.Remove(fmt.Sprintf("%s/%s", directoryName, dPageItem.FileName))
-				if err != nil {
-					pageItems = append(pageItems, dPageItem)
-					err = bdm.WritePagesFile(directoryName, pageItems)
-					if err != nil {
-						panic(err.Error())
-					}
+					panic(err.Error())
 				}
 			}
 			return nil

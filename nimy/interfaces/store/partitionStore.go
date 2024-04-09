@@ -13,7 +13,7 @@ import (
 
 type PartitionStore interface {
 	CreatePartition(db string, blob string, format objects.Format, partition objects.Partition) (objects.Blob, error)
-	AddRecords(db string, blob string, insertRecords []map[string]any) (string, error)
+	AddRecords(db string, blob string, insertRecords []map[string]any) (map[string]map[string]map[string]any, error)
 	GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
 	UpdateRecordByIndex(db string, blob string, recordId string, updateRecord map[string]any) (map[string]map[string]map[string]any, error)
 	UpdateRecordsByPartition(db string, blob string, updateRecord map[string]any, searchPartition map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error)
@@ -49,14 +49,14 @@ func (ps partitionStore) CreatePartition(db string, blob string, format objects.
 	return blobObj, ps.partitionDiskManager.CreatePartition(db, blob, format, partition)
 }
 
-func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[string]any) (string, error) {
+func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[string]any) (map[string]map[string]map[string]any, error) {
 	format, err := ps.blobDiskManager.GetFormat(db, blob)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	partition, err := ps.partitionDiskManager.GetPartition(db, blob)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	blobObj := objects.CreateBlobWithPartition(blob, format, partition)
@@ -64,11 +64,11 @@ func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[
 	for _, insertRecord := range insertRecords {
 		newInsertRecord, err := blobObj.FormatRecord(insertRecord)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		partitionHashKey, err := blobObj.GetPartition().GetPartitionHashKey(newInsertRecord)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		_, ok := partitionHashMap[partitionHashKey]
 		if !ok {
@@ -77,14 +77,19 @@ func (ps partitionStore) AddRecords(db string, blob string, insertRecords []map[
 		partitionHashMap[partitionHashKey] = append(partitionHashMap[partitionHashKey], newInsertRecord)
 	}
 
-	lastRecordId := ""
+	total := make(map[string]map[string]map[string]any)
 	for key, records := range partitionHashMap {
-		lastRecordId, err = ps.addPartitionedRecords(db, blob, key, records)
+		partitionTotal, err := ps.addPartitionedRecords(db, blob, key, records)
+		for pageFile, data := range partitionTotal {
+			if len(data) > 0 {
+				total[pageFile] = data
+			}
+		}
 		if err != nil {
-			return lastRecordId, err
+			return total, err
 		}
 	}
-	return lastRecordId, nil
+	return total, nil
 }
 
 func (ps partitionStore) GetRecordsByPartition(db string, blob string, searchPartition map[string]any, filterItems []objects.FilterItem) (map[string]map[string]map[string]any, error) {
@@ -311,49 +316,55 @@ func (ps partitionStore) IsPartition(db string, blob string) bool {
 	return err == nil
 }
 
-func (ps partitionStore) addPartitionedRecords(db string, blob string, hashKey string, insertRecords []map[string]any) (string, error) {
+func (ps partitionStore) addPartitionedRecords(db string, blob string, hashKey string, insertRecords []map[string]any) (map[string]map[string]map[string]any, error) {
 	partitionItem, err := ps.partitionDiskManager.GetPartitionHashKeyItem(db, blob, hashKey)
 	if err != nil {
 		err = ps.partitionDiskManager.CreatePartitionHashKeyItem(db, blob, hashKey)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 	if len(partitionItem.FileNames) == 0 {
 		partitionItem, err = ps.partitionDiskManager.CreatePartitionHashKeyFile(db, blob, hashKey)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 	currentPageFile := partitionItem.FileNames[len(partitionItem.FileNames)-1]
 	recordMap, err := ps.blobDiskManager.GetPageData(db, blob, currentPageFile)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	lastRecordId := ""
+	total := make(map[string]map[string]map[string]any)
+	total[currentPageFile] = make(map[string]map[string]any)
 	indexMap := make(map[string]string)
 	for _, insertRecord := range insertRecords {
 		lastRecordId = uuid.New().String()
 		recordMap[lastRecordId] = insertRecord
+		total[currentPageFile][lastRecordId] = insertRecord
 		indexMap[lastRecordId] = currentPageFile
 		if len(recordMap) > constants.MaxPageSize {
 			err = ps.blobDiskManager.WritePageData(db, blob, currentPageFile, recordMap)
 			if err != nil {
-				return lastRecordId, err
+				delete(total, currentPageFile)
+				return total, err
 			}
 			recordMap = make(map[string]map[string]any)
 			partitionItem, err = ps.partitionDiskManager.CreatePartitionHashKeyFile(db, blob, hashKey)
 			if err != nil {
-				return lastRecordId, err
+				return total, err
 			}
 			currentPageFile = partitionItem.FileNames[len(partitionItem.FileNames)-1]
+			total[currentPageFile] = make(map[string]map[string]any)
 		}
 	}
 	err = ps.blobDiskManager.WritePageData(db, blob, currentPageFile, recordMap)
 	if err != nil {
-		return lastRecordId, err
+		delete(total, currentPageFile)
+		return total, err
 	}
-	return lastRecordId, ps.blobStore.AddIndexes(db, blob, indexMap)
+	return total, ps.blobStore.AddIndexes(db, blob, indexMap)
 }
 
 func (ps partitionStore) filterPartitionFiles(partitionHashKeyFileNames []string, partition objects.Partition, partitionSearch map[string]any) ([]string, error) {
