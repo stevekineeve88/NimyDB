@@ -17,6 +17,8 @@ type PartitionDiskManager interface {
 	GetPartition(db string, blob string) (objects.Partition, error)
 	GetPartitionHashKeyItem(db string, blob string, hashKey string) (objects.PartitionItem, error)
 	GetPartitionHashKeyItemFileNames(db string, blob string) ([]string, error)
+	DeletePartitionPageItem(db string, blob string, hashKey string, fileName string) error
+	WritePartitionHashKeyItem(directoryName string, hashKey string, partitionItem objects.PartitionItem) error
 }
 
 type partitionDiskManager struct {
@@ -140,6 +142,26 @@ func (pdm partitionDiskManager) GetPartitionHashKeyItemFileNames(db string, blob
 		partitionHashKeyItemFileNames = append(partitionHashKeyItemFileNames, file.Name())
 	}
 	return partitionHashKeyItemFileNames, nil
+}
+
+func (pdm partitionDiskManager) DeletePartitionPageItem(db string, blob string, hashKey string, fileName string) error {
+	partitionItems, err := pdm.GetPartitionHashKeyItem(db, blob, hashKey)
+	if err != nil {
+		return err
+	}
+	for index, pageFileName := range partitionItems.FileNames {
+		if pageFileName == fileName {
+			copy(partitionItems.FileNames[index:], partitionItems.FileNames[index+1:])
+			partitionItems.FileNames[len(partitionItems.FileNames)-1] = ""
+			partitionItems.FileNames = partitionItems.FileNames[:len(partitionItems.FileNames)-1]
+			err = pdm.WritePartitionHashKeyItem(fmt.Sprintf("%s/%s/%s/%s", pdm.dataLocation, db, blob, constants.PartitionsDir), hashKey, partitionItems)
+			if err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return pdm.blobDiskManager.DeletePageItem(db, blob, objects.PageItem{FileName: fileName})
 }
 
 func (pdm partitionDiskManager) WritePartitionHashKeyItem(directoryName string, hashKey string, partitionItem objects.PartitionItem) error {

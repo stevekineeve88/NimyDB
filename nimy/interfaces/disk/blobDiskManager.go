@@ -28,6 +28,7 @@ type BlobDiskManager interface {
 	GetFormat(db string, blob string) (objects.Format, error)
 	WritePageData(db string, blob string, fileName string, records map[string]map[string]any) error
 	WriteIndexData(db string, blob string, fileName string, records map[string]string) error
+	WriteIndexPagesFile(directoryName string, indexItems map[string]objects.PrefixIndexItem) error
 	DeletePageItem(db string, blob string, dPage objects.PageItem) error
 	DeleteIndexFile(db string, blob string, fileName string) error
 	WritePagesFile(directoryName string, pageItems []objects.PageItem) error

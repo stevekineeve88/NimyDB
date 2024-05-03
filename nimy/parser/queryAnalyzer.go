@@ -155,14 +155,39 @@ func (qa *QueryAnalyser) deleteActions(queryParams QueryParams) QueryResult {
 		if len(blobParts) != 2 {
 			return QueryResult{Error: true, ErrorMessage: "'name' property must match db.blob format"}
 		}
-		if err := qa.checkRecordId(queryParams.With.RecordId); err != nil {
-			return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("error on RECORD_ID: %s", err.Error())}
+		if !qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
+			if queryParams.With.Filter != nil {
+				records, err := qa.blobStore.DeleteRecords(blobParts[0], blobParts[1], queryParams.With.Filter)
+				if err != nil {
+					return QueryResult{Error: true, ErrorMessage: err.Error()}
+				}
+				return QueryResult{Records: records, Error: false}
+			}
+			if err := qa.checkRecordId(queryParams.With.RecordId); err == nil {
+				records, err := qa.blobStore.DeleteRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId)
+				if err != nil {
+					return QueryResult{Error: true, ErrorMessage: err.Error()}
+				}
+				return QueryResult{Records: records, Error: false}
+			}
+			return QueryResult{Error: false}
+		} else {
+			if queryParams.With.Filter != nil {
+				records, err := qa.partitionStore.DeleteRecordsByPartition(blobParts[0], blobParts[1], queryParams.With.PartitionSearch, queryParams.With.Filter)
+				if err != nil {
+					return QueryResult{Error: true, ErrorMessage: err.Error()}
+				}
+				return QueryResult{Records: records, Error: false}
+			}
+			if err := qa.checkRecordId(queryParams.With.RecordId); err == nil {
+				records, err := qa.partitionStore.DeleteRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId)
+				if err != nil {
+					return QueryResult{Error: true, ErrorMessage: err.Error()}
+				}
+				return QueryResult{Records: records, Error: false}
+			}
+			return QueryResult{Error: false}
 		}
-		recordIds, err := qa.blobStore.DeleteRecordByIndex(blobParts[0], blobParts[1], queryParams.With.RecordId)
-		if err != nil {
-			return QueryResult{Error: true, ErrorMessage: err.Error()}
-		}
-		return QueryResult{DeletedRecordIds: recordIds, Error: false}
 	default:
 		return QueryResult{Error: true, ErrorMessage: fmt.Sprintf("'on' parameter %s not applicable with action", queryParams.On)}
 	}
@@ -229,17 +254,6 @@ func (qa *QueryAnalyser) updateActions(queryParams QueryParams) QueryResult {
 				return QueryResult{Error: true, ErrorMessage: err.Error()}
 			}
 		}
-		if queryParams.With.PartitionSearch != nil {
-			if !qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
-				return QueryResult{Error: false}
-			} else {
-				records, err := qa.partitionStore.UpdateRecordsByPartition(blobParts[0], blobParts[1], queryParams.With.Record, queryParams.With.PartitionSearch, queryParams.With.Filter)
-				if err != nil {
-					return QueryResult{Error: true, ErrorMessage: err.Error()}
-				}
-				return QueryResult{Records: records, Error: false}
-			}
-		}
 		if queryParams.With.Filter != nil {
 			if !qa.partitionStore.IsPartition(blobParts[0], blobParts[1]) {
 				records, err := qa.blobStore.UpdateRecords(blobParts[0], blobParts[1], queryParams.With.Record, queryParams.With.Filter)
@@ -248,7 +262,7 @@ func (qa *QueryAnalyser) updateActions(queryParams QueryParams) QueryResult {
 				}
 				return QueryResult{Records: records, Error: false}
 			} else {
-				records, err := qa.partitionStore.UpdateRecords(blobParts[0], blobParts[1], queryParams.With.Record, queryParams.With.Filter)
+				records, err := qa.partitionStore.UpdateRecordsByPartition(blobParts[0], blobParts[1], queryParams.With.Record, queryParams.With.PartitionSearch, queryParams.With.Filter)
 				if err != nil {
 					return QueryResult{Error: true, ErrorMessage: err.Error()}
 				}
