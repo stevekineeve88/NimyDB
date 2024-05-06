@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/objects"
+	"nimy/interfaces/util"
 	"os"
 )
 
@@ -24,12 +25,14 @@ type PartitionDiskManager interface {
 type partitionDiskManager struct {
 	dataLocation    string
 	blobDiskManager BlobDiskManager
+	logger          util.Logger
 }
 
 func CreatePartitionDiskManager(dataLocation string, blobDiskManager BlobDiskManager) PartitionDiskManager {
 	return partitionDiskManager{
 		dataLocation:    dataLocation,
 		blobDiskManager: blobDiskManager,
+		logger:          util.GetLogger(),
 	}
 }
 
@@ -53,8 +56,10 @@ func (pdm partitionDiskManager) CreatePartition(db string, blob string, format o
 	for _, fileCreation := range fileCreations {
 		err = fileCreation(db, blob)
 		if err != nil {
+			pdm.logger.Log("failed to create partition. Rolling back...", util.Warn, "db", db, "blob", blob, "error", err.Error())
 			deleteBlobError := pdm.blobDiskManager.DeleteBlob(db, blob)
 			if deleteBlobError != nil {
+				pdm.logger.Log("rollback operation failed. Corrupt partition", util.Error, "db", db, "blob", blob, "error", deleteBlobError.Error())
 				panic(deleteBlobError.Error())
 			}
 			return err
@@ -65,6 +70,7 @@ func (pdm partitionDiskManager) CreatePartition(db string, blob string, format o
 }
 
 func (pdm partitionDiskManager) CreatePartitionsFileAndDir(db string, blob string, partition objects.Partition) error {
+	pdm.logger.Log("creating partitions file and directory", util.Info, "db", db, "blob", blob)
 	partitionData, _ := json.Marshal(partition)
 	err := pdm.blobDiskManager.CreateFile(fmt.Sprintf("%s/%s/%s", pdm.dataLocation, db, blob), partitionData, constants.PartitionsFile)
 	if err != nil {
@@ -95,19 +101,26 @@ func (pdm partitionDiskManager) CreatePartitionHashKeyFile(db string, blob strin
 	pagesItems = append(pagesItems, objects.PageItem{FileName: partitionFileName})
 
 	pageData, _ := json.Marshal(make(map[string]interface{}))
+
 	err = pdm.blobDiskManager.CreateFile(blobDirectory, pageData, partitionFileName)
 	if err != nil {
 		return partitionItem, err
 	}
 	err = pdm.WritePartitionHashKeyItem(blobDirectory+"/"+constants.PartitionsDir, hashKey, partitionItem)
 	if err != nil {
+		pdm.logger.Log("failed to creation partitions page. Rolling back...", util.Warn, "db", db, "blob", blob, "hash-key", hashKey, "page", partitionFileName, "error", err.Error())
 		deletePageError := os.Remove(fmt.Sprintf("%s/%s/%s", blobDirectory, constants.PartitionsDir, partitionFileName))
 		if deletePageError != nil {
+			pdm.logger.Log("failed to creation partitions page. Rolling back...", util.Error, "db", db, "blob", blob, "hash-key", hashKey, "page", partitionFileName, "error", deletePageError.Error())
 			panic(deletePageError.Error())
 		}
 		return partitionItem, err
 	}
-	return partitionItem, pdm.blobDiskManager.WritePagesFile(blobDirectory, pagesItems)
+	err = pdm.blobDiskManager.WritePagesFile(blobDirectory, pagesItems)
+	if err != nil {
+		panic(err.Error())
+	}
+	return partitionItem, nil
 }
 
 func (pdm partitionDiskManager) GetPartition(db string, blob string) (objects.Partition, error) {

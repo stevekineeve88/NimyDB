@@ -2,6 +2,7 @@ package disk
 
 import (
 	"fmt"
+	"nimy/interfaces/util"
 	"os"
 )
 
@@ -13,19 +14,23 @@ type DBDiskManager interface {
 
 type dbDisk struct {
 	dataLocation string
+	logger       util.Logger
 }
 
 func CreateDBDiskManager(dataLocation string) DBDiskManager {
 	return dbDisk{
 		dataLocation: dataLocation,
+		logger:       util.GetLogger(),
 	}
 }
 
 func (dbd dbDisk) Create(db string) error {
+	dbd.logger.Log("creating database", util.Info, "db", db)
 	return os.Mkdir(fmt.Sprintf("%s/%s", dbd.dataLocation, db), 0600)
 }
 
 func (dbd dbDisk) Delete(db string) error {
+	dbd.logger.Log("deleting database", util.Info, "db", db)
 	return os.Remove(fmt.Sprintf("%s/%s", dbd.dataLocation, db))
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"nimy/constants"
 	"nimy/interfaces/objects"
+	"nimy/interfaces/util"
 	"os"
 )
 
@@ -23,7 +24,6 @@ type BlobDiskManager interface {
 	GetPageItems(db string, blob string) ([]objects.PageItem, error)
 	GetPrefixIndexItems(db string, blob string) (map[string]objects.PrefixIndexItem, error)
 	GetPageData(db string, blob string, fileName string) (map[string]map[string]any, error)
-	OpenPage(db string, blob string, fileName string) (*os.File, error)
 	GetIndexData(db string, blob string, fileName string) (map[string]string, error)
 	GetFormat(db string, blob string) (objects.Format, error)
 	WritePageData(db string, blob string, fileName string, records map[string]map[string]any) error
@@ -38,11 +38,13 @@ type BlobDiskManager interface {
 
 type blobDiskManager struct {
 	dataLocation string
+	logger       util.Logger
 }
 
 func CreateBlobDiskManager(dataLocation string) BlobDiskManager {
 	return blobDiskManager{
 		dataLocation: dataLocation,
+		logger:       util.GetLogger(),
 	}
 }
 
@@ -63,8 +65,10 @@ func (bdm blobDiskManager) CreateBlob(db string, blob string, format objects.For
 	for _, fileCreation := range fileCreations {
 		err = fileCreation(db, blob)
 		if err != nil {
+			bdm.logger.Log("failed to create blob. Rolling back...", util.Warn, "db", db, "blob", blob, "error", err.Error())
 			deleteBlobError := bdm.DeleteBlob(db, blob)
 			if deleteBlobError != nil {
+				bdm.logger.Log("roll back operation failed. Corrupt blob", util.Error, "db", db, "blob", blob, "error", deleteBlobError.Error())
 				panic(deleteBlobError.Error())
 			}
 			return err
@@ -75,6 +79,7 @@ func (bdm blobDiskManager) CreateBlob(db string, blob string, format objects.For
 }
 
 func (bdm blobDiskManager) DeleteBlob(db string, blob string) error {
+	bdm.logger.Log("deleting blob", util.Info, "db", db, "blob", blob)
 	return os.RemoveAll(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob))
 }
 
@@ -92,6 +97,7 @@ func (bdm blobDiskManager) CreatePage(db string, blob string) (objects.PageItem,
 	blobDirectory := fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob)
 	pageItem.FileName = fmt.Sprintf("%s/%s.json", constants.PagesDir, uuid.New().String())
 	pageData, _ := json.Marshal(make(map[string]interface{}))
+
 	err = bdm.CreateFile(blobDirectory, pageData, pageItem.FileName)
 	if err != nil {
 		return pageItem, err
@@ -99,8 +105,10 @@ func (bdm blobDiskManager) CreatePage(db string, blob string) (objects.PageItem,
 	pagesItems = append(pagesItems, pageItem)
 	err = bdm.WritePagesFile(blobDirectory, pagesItems)
 	if err != nil {
+		bdm.logger.Log("failed to create page. Rolling back...", util.Warn, "db", db, "blob", blob, "page", pageItem.FileName, "error", err.Error())
 		deletePageError := os.Remove(fmt.Sprintf("%s/%s", blobDirectory, pageItem.FileName))
 		if deletePageError != nil {
+			bdm.logger.Log("roll back operation failed. Corrupt page", util.Error, "db", db, "blob", blob, "page", pageItem.FileName, "error", deletePageError.Error())
 			panic(deletePageError.Error())
 		}
 		return pageItem, err
@@ -121,6 +129,7 @@ func (bdm blobDiskManager) CreateIndexPage(db string, blob string, prefix string
 	}
 	indexFileName := fmt.Sprintf("%s/%s.json", constants.IndexesDir, uuid.New().String())
 	indexMap, _ := json.Marshal(make(map[string]string))
+
 	err = bdm.CreateFile(blobDirectory, indexMap, indexFileName)
 	if err != nil {
 		return prefixIndexItem, err
@@ -129,8 +138,10 @@ func (bdm blobDiskManager) CreateIndexPage(db string, blob string, prefix string
 	prefixIndexItemMap[prefix] = prefixIndexItem
 	err = bdm.WriteIndexPagesFile(blobDirectory, prefixIndexItemMap)
 	if err != nil {
+		bdm.logger.Log("failed to create index page. Rolling back...", util.Warn, "db", db, "blob", blob, "page", indexFileName, "error", err.Error())
 		deleteIndexPageError := os.Remove(fmt.Sprintf("%s/%s", blobDirectory, indexFileName))
 		if deleteIndexPageError != nil {
+			bdm.logger.Log("roll back operation failed. Corrupt index page", util.Error, "db", db, "blob", blob, "page", indexFileName, "error", deleteIndexPageError.Error())
 			panic(deleteIndexPageError.Error())
 		}
 		return prefixIndexItem, err
@@ -139,11 +150,13 @@ func (bdm blobDiskManager) CreateIndexPage(db string, blob string, prefix string
 }
 
 func (bdm blobDiskManager) CreateFormatFile(db string, blob string, format objects.Format) error {
+	bdm.logger.Log("creating format file", util.Info, "db", db, "blob", blob)
 	formatData, _ := json.Marshal(format.GetMap())
 	return bdm.CreateFile(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob), formatData, constants.FormatFile)
 }
 
 func (bdm blobDiskManager) CreatePagesFileAndDir(db string, blob string) error {
+	bdm.logger.Log("creating pages file and directory", util.Info, "db", db, "blob", blob)
 	pageData, _ := json.Marshal(make([]objects.PageItem, 0))
 	err := bdm.CreateFile(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob), pageData, constants.PagesFile)
 	if err != nil {
@@ -153,6 +166,7 @@ func (bdm blobDiskManager) CreatePagesFileAndDir(db string, blob string) error {
 }
 
 func (bdm blobDiskManager) CreateIndexesFileAndDir(db string, blob string) error {
+	bdm.logger.Log("creating index pages file and directory", util.Info, "db", db, "blob", blob)
 	indexData, _ := json.Marshal(make(map[string]objects.PrefixIndexItem))
 	err := bdm.CreateFile(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob), indexData, constants.IndexesFile)
 	if err != nil {
@@ -203,10 +217,6 @@ func (bdm blobDiskManager) GetPageData(db string, blob string, fileName string) 
 	}
 	err = json.Unmarshal(file, &pageData)
 	return pageData, err
-}
-
-func (bdm blobDiskManager) OpenPage(db string, blob string, fileName string) (*os.File, error) {
-	return os.Open(fmt.Sprintf("%s/%s/%s/%s", bdm.dataLocation, db, blob, fileName))
 }
 
 func (bdm blobDiskManager) GetIndexData(db string, blob string, fileName string) (map[string]string, error) {
@@ -262,9 +272,11 @@ func (bdm blobDiskManager) DeletePageItem(db string, blob string, dPageItem obje
 			}
 			err = os.Remove(fmt.Sprintf("%s/%s", directoryName, dPageItem.FileName))
 			if err != nil {
+				bdm.logger.Log("failed to delete page. Rolling back...", util.Warn, "db", db, "blob", blob, "page", dPageItem.FileName, "error", err.Error())
 				pageItems = append(pageItems, dPageItem)
 				err = bdm.WritePagesFile(directoryName, pageItems)
 				if err != nil {
+					bdm.logger.Log("roll back operation failed. Corrupt page", util.Error, "db", db, "blob", blob, "page", dPageItem.FileName, "error", err.Error())
 					panic(err.Error())
 				}
 			}
@@ -295,11 +307,13 @@ func (bdm blobDiskManager) DeleteIndexFile(db string, blob string, dFileName str
 				}
 				err = os.Remove(fmt.Sprintf("%s/%s", directoryName, dFileName))
 				if err != nil {
+					bdm.logger.Log("failed to delete index page. Rolling back...", util.Warn, "db", db, "blob", blob, "page", dFileName, "error", err.Error())
 					temp, _ = prefixIndexItemsMap[prefix]
 					temp.FileNames = append(temp.FileNames, dFileName)
 					prefixIndexItemsMap[prefix] = temp
 					err = bdm.WriteIndexPagesFile(directoryName, prefixIndexItemsMap)
 					if err != nil {
+						bdm.logger.Log("roll back operation failed. Corrupt index page", util.Error, "db", db, "blob", blob, "page", dFileName, "error", err.Error())
 						panic(err.Error())
 					}
 				}
