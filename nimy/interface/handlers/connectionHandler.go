@@ -6,7 +6,6 @@ import (
 	"github.com/stevekineeve88/nimydb-engine/pkg/query/constants"
 	"github.com/stevekineeve88/nimydb-engine/pkg/query/models"
 	"github.com/stevekineeve88/nimydb-engine/pkg/system/constants"
-	"github.com/stevekineeve88/nimydb-engine/pkg/system/models"
 	"log/slog"
 	"net"
 	"nimy/interface/models"
@@ -82,19 +81,19 @@ func (handler *connectionHandler) _handleConnection(conn net.Conn) {
 
 func (handler *connectionHandler) _hasPermission(connectionKey string, message models.ProtocolMessage) bool {
 	user, _ := handler.userPool.Get(connectionKey)
-	checks := map[string]func(user systemModels.User) bool{
-		queryConstants.ActionGet + queryConstants.OnLogs:    func(user systemModels.User) bool { return systemConstants.HasSuperRead(user.Permission) },
-		queryConstants.ActionGet + queryConstants.OnUsers:   func(user systemModels.User) bool { return systemConstants.HasSuperRead(user.Permission) },
-		queryConstants.ActionCreate + queryConstants.OnData: func(user systemModels.User) bool { return systemConstants.HasReadWrite(user.Permission) },
-		queryConstants.ActionCreate + queryConstants.OnBlob: func(user systemModels.User) bool { return systemConstants.HasReadWrite(user.Permission) },
-		queryConstants.ActionCreate + queryConstants.OnDB:   func(user systemModels.User) bool { return systemConstants.HasReadWrite(user.Permission) },
-		queryConstants.ActionDelete + queryConstants.OnData: func(user systemModels.User) bool { return systemConstants.HasReadWrite(user.Permission) },
-		queryConstants.ActionDelete + queryConstants.OnBlob: func(user systemModels.User) bool { return systemConstants.HasReadWrite(user.Permission) },
-		queryConstants.ActionDelete + queryConstants.OnDB:   func(user systemModels.User) bool { return systemConstants.HasReadWrite(user.Permission) },
-		queryConstants.ActionUpdate + queryConstants.OnData: func(user systemModels.User) bool { return systemConstants.HasReadWrite(user.Permission) },
+	checks := map[string]func(permission string) bool{
+		queryConstants.ActionGet + queryConstants.OnLogs:    systemConstants.HasSuperRead,
+		queryConstants.ActionGet + queryConstants.OnUsers:   systemConstants.HasSuperRead,
+		queryConstants.ActionCreate + queryConstants.OnData: systemConstants.HasReadWrite,
+		queryConstants.ActionCreate + queryConstants.OnBlob: systemConstants.HasReadWrite,
+		queryConstants.ActionCreate + queryConstants.OnDB:   systemConstants.HasReadWrite,
+		queryConstants.ActionDelete + queryConstants.OnData: systemConstants.HasReadWrite,
+		queryConstants.ActionDelete + queryConstants.OnBlob: systemConstants.HasReadWrite,
+		queryConstants.ActionDelete + queryConstants.OnDB:   systemConstants.HasReadWrite,
+		queryConstants.ActionUpdate + queryConstants.OnData: systemConstants.HasReadWrite,
 	}
 	if checkFunc, ok := checks[message.Query.Action+message.Query.On]; ok {
-		return checkFunc(user)
+		return checkFunc(user.Permission)
 	}
 	return true
 }
