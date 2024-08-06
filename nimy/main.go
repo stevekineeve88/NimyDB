@@ -1,100 +1,48 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
-	"fmt"
-	"math/rand"
-	"nimy/parser"
-	"os"
-	"strconv"
-	"strings"
-	"time"
+	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
+	"github.com/stevekineeve88/nimydb-engine/pkg/memory/managers"
+	"github.com/stevekineeve88/nimydb-engine/pkg/memory/models"
+	"github.com/stevekineeve88/nimydb-engine/pkg/query/managers"
+	"github.com/stevekineeve88/nimydb-engine/pkg/system"
+	"github.com/stevekineeve88/nimydb-engine/pkg/system/managers"
+	"log/slog"
+	"nimy/config"
+	"nimy/interface/handlers"
+	"nimy/interface/models"
 )
 
 func main() {
-	dataLocation := "C:\\nimy-data"
-	queryAnalyzer := parser.CreateQueryAnalyser(dataLocation)
+	configFileLoc := "./config/config.json"
 
-	fmt.Println("---WELCOME TO NimyDB-----")
+	slog.Info("reading from config", "file", configFileLoc)
+	nimyDBConfig := config.GetConfig(configFileLoc)
+	_ = diskUtils.CreateDir(nimyDBConfig.DataLocation)
 
-	for true {
-		input := getInput("Enter Command: ")
-		if input == "DONE" {
-			break
-		}
-		queryParams := parser.QueryParams{}
-		if input == "SIMULATE MASS PARTITION" {
-			queryParams = buildMassPartitionQuery()
-		} else {
-			err := json.Unmarshal([]byte(input), &queryParams)
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-		}
-		startTime := time.Now()
-		result := queryAnalyzer.Query(queryParams)
-		fmt.Printf("query time: %f\n", time.Now().Sub(startTime).Seconds())
-		if result.Error {
-			fmt.Println(result.ErrorMessage)
-		} else {
-			for key, records := range result.Records {
-				fmt.Printf("File %s, Total Records (%d)\n", key, len(records))
-			}
-		}
-	}
-}
+	dbMap := memoryModels.NewDBMap(nimyDBConfig.DataLocation, nimyDBConfig.Caching)
+	userPool := models.NewUserPool()
 
-func getInput(prompt string) string {
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print(prompt)
-	text, _ := reader.ReadString('\n')
-	text = strings.TrimSpace(text)
-	return text
-}
+	//set managers
+	operationManager := memoryManagers.CreateOperationManager(&dbMap)
 
-func buildMassPartitionQuery() parser.QueryParams {
-	currentYear, _ := strconv.Atoi(getInput("Enter start year: "))
-	endYear, _ := strconv.Atoi(getInput("Enter end year: "))
+	slog.Info("initializing system database")
+	system.InitDB(operationManager)
+	slog.Info("system database initialized successfully")
 
-	category := []string{
-		"A",
-		"B",
-		"C",
-		"D",
-		"E",
-		"F",
-	}
-	comments := []string{
-		"N/A",
-		"A good day today",
-		"A bad day today",
-	}
+	queryManager := queryManagers.CreateQueryManager(operationManager)
+	logManager := systemManagers.CreateLogManager(operationManager)
+	userManager := systemManagers.CreateUserManager(operationManager)
 
-	var records []map[string]any
-	for currentYear <= endYear {
-		currentDate := time.Date(currentYear, 01, 01, 0, 0, 0, 0, time.Local)
-		endDate := time.Date(currentYear, 12, 31, 0, 0, 0, 0, time.Local)
-		for endDate.After(currentDate) {
-			for _, value := range category {
-				records = append(records, map[string]any{
-					"category": value,
-					"log_date": currentDate.Unix(),
-					"comments": comments[rand.Intn(len(comments))],
-					"rank":     rand.Intn(10),
-				})
-			}
-			currentDate = currentDate.Add(time.Hour * 24)
-		}
-		currentYear++
-	}
-	return parser.QueryParams{
-		Action: "CREATE",
-		On:     "RECORDS",
-		Name:   "app.user_logs_quant",
-		With: parser.With{
-			Records: records,
-		},
-	}
+	slog.Info("initializing root user")
+	userManager.InitRoot(nimyDBConfig.RootPass)
+	slog.Info("root user initialized successfully")
+	systemQueryManager := queryManagers.CreateSystemQueryManager(logManager, userManager)
+
+	//set handlers
+	protocolHandler := handlers.CreateProtocolHandler(queryManager, systemQueryManager, logManager)
+	connectionHandler := handlers.CreateConnectionHandler(protocolHandler, &userPool)
+
+	slog.Info("starting server", "port", nimyDBConfig.Port)
+	connectionHandler.Start(nimyDBConfig.Port)
 }

@@ -1,0 +1,6 @@
+{
+  "port": "7205",
+  "caching": false,
+  "rootPass": "nimynimy",
+  "dataLocation": "C:\\ProgramData\\NimyDB"
+}
